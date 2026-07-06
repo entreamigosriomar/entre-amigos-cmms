@@ -1,9 +1,0 @@
-{
-  "name": "Manutenção Entre Amigos",
-  "short_name": "Manutenção EA",
-  "start_url": "./index.html",
-  "display": "standalone",
-  "background_color": "#001f3f",
-  "theme_color": "#001f3f",
-  "icons": []
-}
