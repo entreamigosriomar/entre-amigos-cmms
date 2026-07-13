@@ -57,6 +57,39 @@ http://127.0.0.1:4173/index.html
 9. Abertura de OS com múltiplas fotos no desktop.
 10. Realtime em duas abas sem apagar formulário aberto.
 
+## Homologação V17 — 2026-07-13
+
+Versão em homologação: **V17**.
+
+Esta atualização existe para disparar uma implantação de pré-visualização na Vercel e orientar o teste real em dispositivos.
+
+### Checklist Android
+
+- Abrir OS sem foto e confirmar bloqueio com mensagem na tela.
+- Abrir câmera pelo Chrome Android e enviar uma foto.
+- Abrir galeria pelo Chrome Android e enviar múltiplas fotos.
+- Remover uma foto antes do envio.
+- Confirmar que problema, descrição, área, setor, categoria, equipamento e prioridade não são apagados após usar câmera/galeria.
+
+### Checklist iPhone
+
+- Abrir OS sem foto e confirmar bloqueio com mensagem na tela.
+- Abrir câmera pelo Safari iPhone e enviar uma foto.
+- Abrir galeria pelo Safari iPhone e enviar múltiplas fotos.
+- Remover uma foto antes do envio.
+- Confirmar que problema, descrição, área, setor, categoria, equipamento e prioridade não são apagados após usar câmera/galeria.
+
+### Checklist desktop
+
+- Abrir OS com uma imagem.
+- Abrir OS com múltiplas imagens.
+- Validar bloqueio para arquivo não imagem.
+- Validar limite de 8 imagens.
+- Validar limite de 10 MB por imagem.
+- Testar troca de unidade com MASTER/ADMIN/DIRETOR.
+- Testar que técnico/operador não troca unidade.
+- Testar Realtime em duas abas sem apagar formulário aberto.
+
 ## Banco de dados
 
 Não há alteração destrutiva ou migração SQL nova nesta versão.
