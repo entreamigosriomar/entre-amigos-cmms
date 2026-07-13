@@ -30,7 +30,8 @@ ok('Cancelada não conta como aberta',app.includes('OPEN_OS_STATUSES')&&app.incl
 ok('Custo do mês filtra pelo período atual',app.includes('d>=monthStart')&&app.includes('getMonth()+1'));
 ok('Detalhes e equipamento inexistentes são tratados',app.includes('OS não encontrada ou removida')&&app.includes('Equipamento não encontrado ou removido'));
 ok('Anexos e checklist checam erros',app.includes('attachError')&&app.includes('respError')&&app.includes('ncError'));
-ok('Sem service_role no frontend',![index,app,config].join('\n').includes('service_role'));
+const forbiddenToken='service'+'_role';
+ok('Sem chave privilegiada no frontend',![index,app,config].join('\n').includes(forbiddenToken));
 const failed=checks.filter(c=>!c.pass);
 for(const c of checks) console.log(`${c.pass?'PASS':'FAIL'} ${c.name}`);
 if(failed.length){console.error(`\n${failed.length} smoke checks failed.`);process.exit(1)}
