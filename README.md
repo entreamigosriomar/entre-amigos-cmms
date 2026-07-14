@@ -93,3 +93,29 @@ Esta atualização existe para disparar uma implantação de pré-visualização
 ## Banco de dados
 
 Não há alteração destrutiva ou migração SQL nova nesta versão.
+
+
+# V18 — Operação Real RioMar Recife
+
+Objetivo principal: preparar a plataforma para testes operacionais reais na unidade RioMar Recife, priorizando estabilidade, simplicidade e experiência do técnico.
+
+## Escopo V18
+
+- Painel exclusivo do técnico com Serviços do Dia, Preventivas do Dia, OS Aguardando Peça, OS Terceirizadas e OS Aguardando Aprovação.
+- Cartões técnicos com foto, número da OS, TAG, equipamento, área, setor, prioridade, tempo desde abertura e solicitante.
+- Botão **▶ Iniciar Serviço** alterando a OS para `EM_EXECUCAO`.
+- Conclusão de OS com foto, descrição do serviço e tempo gasto obrigatórios; peças, custos e observações opcionais.
+- Equipamento 360 com TAG, status, custos, quantidade de OS, preventivas, tempo parado e linha do tempo/histórico.
+- Multiunidade: MASTER pode alternar unidade; demais usuários ficam restritos à unidade do perfil.
+
+## Checklist de teste V18
+
+1. Entrar como técnico e confirmar que não aparecem Dashboard administrativo, Cadastros, Custos, Configurações ou Relatórios administrativos.
+2. Validar cartões de Serviços do Dia com foto, número da OS, TAG, equipamento, área, setor, prioridade, tempo desde abertura e solicitante.
+3. Clicar em **▶ Iniciar Serviço** e confirmar mudança para `EM_EXECUCAO`.
+4. Concluir OS exigindo foto, descrição e tempo gasto.
+5. Repetir conclusão com múltiplas fotos em Android, iPhone e desktop.
+6. Validar as filas OS Aguardando Peça, OS Terceirizadas e OS Aguardando Aprovação.
+7. Abrir ficha 360° de equipamento e conferir custos, quantidade de OS, preventivas, tempo parado e histórico.
+8. Entrar como MASTER e alternar unidade.
+9. Entrar como usuário não MASTER e confirmar restrição à unidade do perfil.

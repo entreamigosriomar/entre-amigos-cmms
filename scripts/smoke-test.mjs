@@ -31,6 +31,13 @@ ok('Custo do mês filtra pelo período atual',app.includes('d>=monthStart')&&app
 ok('Detalhes e equipamento inexistentes são tratados',app.includes('OS não encontrada ou removida')&&app.includes('Equipamento não encontrado ou removido'));
 ok('Anexos e checklist checam erros',app.includes('attachError')&&app.includes('respError')&&app.includes('ncError'));
 const forbiddenToken='service'+'_role';
+
+ok('V18 painel técnico mostra filas operacionais',app.includes('OS Aguardando Peça')&&app.includes('OS Terceirizadas')&&app.includes('OS Aguardando Aprovação'));
+ok('V18 técnico vê cartões com TAG, área, setor, tempo e solicitante',app.includes('Aberta há:')&&app.includes('Solicitante:')&&app.includes('TAG:'));
+ok('V18 iniciar serviço muda para EM_EXECUCAO',app.includes('async function startOS')&&app.includes('status:"EM_EXECUCAO"'));
+ok('V18 conclusão exige tempo gasto',app.includes('osTimeSpent')&&app.includes('Informe o tempo gasto em minutos'));
+ok('V18 equipamento 360 mostra preventivas, tempo parado e linha do tempo',app.includes('Preventivas:')&&app.includes('Tempo parado:')&&app.includes('Linha do tempo / histórico'));
+ok('V18 somente MASTER troca unidade',app.includes('function canSwitchUnits(){return currentProfile?.role==="MASTER"}'));
 ok('Sem chave privilegiada no frontend',![index,app,config].join('\n').includes(forbiddenToken));
 const failed=checks.filter(c=>!c.pass);
 for(const c of checks) console.log(`${c.pass?'PASS':'FAIL'} ${c.name}`);

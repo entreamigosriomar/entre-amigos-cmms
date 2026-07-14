@@ -25,7 +25,7 @@ function unitPrefix(name){
   return "EA";
 }
 function canDeleteCatalog(){ return canManageCatalog(); }
-function canSwitchUnits(){return ["MASTER","ADMIN","DIRETOR"].includes(currentProfile?.role)}
+function canSwitchUnits(){return currentProfile?.role==="MASTER"}
 function isOpenOS(o){return OPEN_OS_STATUSES.includes(o?.status)}
 function hasBlockingForm(){return !!document.querySelector("#osForm,#finishOS,#execPrev,#eqForm,#prevForm,#catalogForm,#editEqForm,#editCatalogForm")}
 
@@ -36,6 +36,19 @@ function sectorName(id){return sectors.find(s=>s.id===id)?.nome||"Não informado
 function areaName(id){return areas.find(a=>a.id===id)?.nome||"Não informada"}
 function currentUnitName(){return availableUnits.find(u=>u.id===unitId)?.nome||"Unidade"}
 function logo(){return `<img src="${LOGO}" class="logo" alt="Entre Amigos">`}
+function profileName(id){return profiles.find(p=>p.id===id)?.nome||"Não informado"}
+function equipmentTag(id){return equipment.find(e=>e.id===id)?.tag||"SEM TAG"}
+function timeSince(value){
+  if(!value)return "Sem data";
+  const diff=Math.max(0,Date.now()-new Date(value).getTime()),min=Math.floor(diff/60000),h=Math.floor(min/60),d=Math.floor(h/24);
+  if(d>0)return `${d}d ${h%24}h`;
+  if(h>0)return `${h}h ${min%60}min`;
+  return `${min}min`;
+}
+function formatMoney(v){return "R$ "+Number(v||0).toFixed(2).replace(".",",")}
+function downtimeHoursForEquipment(id){
+  return orders.filter(o=>o.equipamento_id===id&&isOpenOS(o)).reduce((sum,o)=>sum+Math.max(0,(Date.now()-new Date(o.data_abertura||Date.now()).getTime())/3600000),0);
+}
 
 async function bootstrap(){
   const {data:{session}}=await sb.auth.getSession();
@@ -136,38 +149,51 @@ function isTodayDate(value){
   return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth()&&d.getDate()===now.getDate();
 }
 function technicianPage(){
-  const active=orders.filter(o=>o.status!=="CONCLUIDA"&&o.status!=="CANCELADA");
+  const active=orders.filter(isOpenOS);
   const assigned=active.filter(o=>!o.tecnico_id||o.tecnico_id===currentUser.id);
+  const services=assigned.filter(o=>["ABERTA","EM_EXECUCAO"].includes(o.status));
+  const waitingParts=assigned.filter(o=>o.status==="AGUARDANDO_PECA");
+  const outsourced=assigned.filter(o=>o.status==="AGUARDANDO_TERCEIRIZADA");
+  const approval=assigned.filter(o=>o.status==="AGUARDANDO_APROVACAO_DIRETOR");
   const todayPrev=preventives.filter(p=>isTodayDate(p.data_programada)&&p.status!=="CONCLUIDA");
-  const urgent=assigned.filter(o=>["CRITICA","ALTA"].includes(o.prioridade));
-  setTimeout(()=>hydrateTechnicianCards(assigned),0);
-  return `<div class="hero"><div><h1>Serviços do Dia</h1><p>Chamados e preventivas planejados para execução.</p></div><span class="today-tag">${new Date().toLocaleDateString("pt-BR")}</span></div>
-  <div class="tech-summary">${kpi("Chamados",assigned.length,"Pendentes")}${kpi("Urgentes",urgent.length,"Alta/Crítica")}${kpi("Preventivas",todayPrev.length,"Programadas hoje")}</div>
-  <div class="tech-section-title"><h2>Chamados do dia</h2><span class="pill">${assigned.length}</span></div>
-  <div id="techOrders" class="grid"><div class="empty">Carregando chamados...</div></div>
-  <div class="tech-section-title"><h2>Preventivas de hoje</h2><span class="pill">${todayPrev.length}</span></div>
-  <div class="grid">${todayPrev.length?todayPrev.map(techPreventiveCard).join(""):'<div class="empty">Nenhuma preventiva programada para hoje.</div>'}</div>`;
+  setTimeout(()=>hydrateTechnicianCards({services,waitingParts,outsourced,approval}),0);
+  return `<div class="hero"><div><h1>Serviços do Dia</h1><p>Painel operacional do técnico — ${esc(currentUnitName())}</p></div><span class="today-tag">${new Date().toLocaleDateString("pt-BR")}</span></div>
+  <div class="tech-summary">${kpi("Serviços",services.length,"Para executar")}${kpi("Preventivas",todayPrev.length,"Hoje")}${kpi("Pendências",waitingParts.length+outsourced.length+approval.length,"Peças/terceiros/aprovação")}</div>
+  <div class="tech-section-title"><h2>Serviços do Dia</h2><span class="pill">${services.length}</span></div><div id="techServices" class="grid"><div class="empty">Carregando serviços...</div></div>
+  <div class="tech-section-title"><h2>Preventivas do Dia</h2><span class="pill">${todayPrev.length}</span></div><div class="grid">${todayPrev.length?todayPrev.map(techPreventiveCard).join(""):'<div class="empty">Nenhuma preventiva programada para hoje.</div>'}</div>
+  <div class="tech-section-title"><h2>OS Aguardando Peça</h2><span class="pill">${waitingParts.length}</span></div><div id="techWaitingParts" class="grid"><div class="empty">Carregando...</div></div>
+  <div class="tech-section-title"><h2>OS Terceirizadas</h2><span class="pill">${outsourced.length}</span></div><div id="techOutsourced" class="grid"><div class="empty">Carregando...</div></div>
+  <div class="tech-section-title"><h2>OS Aguardando Aprovação</h2><span class="pill">${approval.length}</span></div><div id="techApproval" class="grid"><div class="empty">Carregando...</div></div>`;
 }
-async function hydrateTechnicianCards(list){
-  const photos=await getOpeningPhotos(list.map(o=>o.id));
-  const box=document.getElementById("techOrders");if(!box)return;
-  box.innerHTML=list.length?list.sort((a,b)=>peso(b.prioridade)-peso(a.prioridade)).map(o=>techOrderCard(o,photos[o.id])).join(""):'<div class="empty">Nenhum chamado pendente.</div>';
+async function hydrateTechnicianCards(groups){
+  const all=[...groups.services,...groups.waitingParts,...groups.outsourced,...groups.approval];
+  const photos=await getOpeningPhotos(all.map(o=>o.id));
+  const render=(id,list,empty)=>{const box=document.getElementById(id);if(!box)return;box.innerHTML=list.length?list.sort((a,b)=>peso(b.prioridade)-peso(a.prioridade)).map(o=>techOrderCard(o,photos[o.id])).join(""): `<div class="empty">${empty}</div>`};
+  render("techServices",groups.services,"Nenhum serviço pendente para execução.");
+  render("techWaitingParts",groups.waitingParts,"Nenhuma OS aguardando peça.");
+  render("techOutsourced",groups.outsourced,"Nenhuma OS terceirizada.");
+  render("techApproval",groups.approval,"Nenhuma OS aguardando aprovação.");
   bindTechnicianButtons();
 }
 function techOrderCard(o,photo){
+  const eq=equipment.find(e=>e.id===o.equipamento_id);
   return `<div class="tech-card ${o.prioridade==="CRITICA"?"critical":o.prioridade==="ALTA"?"high":""}">
-    ${photo?`<img class="tech-photo" src="${photo}" alt="Foto do chamado">`:'<div class="tech-photo-placeholder">📷</div>'}
-    <div><div class="service-type">Chamado corretivo</div><h2>${esc(equipmentName(o.equipamento_id))}</h2><small>${esc(sectorName(o.setor_id))} • OS ${o.numero}</small><p>${esc(o.descricao)}</p><span class="pill ${priorityClass(o.prioridade)}">${o.prioridade}</span> <span class="pill">${o.status}</span></div>
-    <div class="tech-actions"><button class="btn primary techStatus" data-id="${o.id}">Atualizar situação</button><button class="btn light detailOS" data-id="${o.id}">Ver detalhes</button></div>
+    ${photo?`<img class="tech-photo" src="${photo}" alt="Foto da ocorrência">`:'<div class="tech-photo-placeholder">📷</div>'}
+    <div><div class="service-type">OS ${esc(o.numero||"")} • ${esc(o.status)}</div><h2>${esc(equipmentName(o.equipamento_id))}</h2>
+    <p><b>TAG:</b> ${esc(eq?.tag||"SEM TAG")} • <b>Área:</b> ${esc(areaName(o.area_id||eq?.area_id))} • <b>Setor:</b> ${esc(sectorName(o.setor_id||eq?.setor_id))}</p>
+    <p><b>Prioridade:</b> <span class="pill ${priorityClass(o.prioridade)}">${esc(o.prioridade)}</span> <b>Aberta há:</b> ${timeSince(o.data_abertura)} <b>Solicitante:</b> ${esc(profileName(o.solicitante_id))}</p>
+    <p>${esc(o.descricao)}</p></div>
+    <div class="tech-actions">${o.status==="ABERTA"?`<button class="btn primary startOS" data-id="${o.id}">▶ Iniciar Serviço</button>`:""}<button class="btn orange finishOS" data-id="${o.id}">Concluir</button><button class="btn light detailOS" data-id="${o.id}">Ver detalhes</button></div>
   </div>`;
 }
 function techPreventiveCard(p){
-  let resumo="Preventiva programada";try{resumo=JSON.parse(p.observacoes||"{}").resumo||resumo}catch{}
-  return `<div class="tech-card"><div class="tech-photo-placeholder">🧰</div><div><div class="service-type">Manutenção preventiva</div><h2>${esc(equipmentName(p.equipamento_id))}</h2><p>${esc(resumo)}</p><span class="pill">${p.status}</span> <span class="pill">${parseChecklist(p).length} itens</span></div><div class="tech-actions"><button class="btn primary execPrev" data-id="${p.id}">Executar checklist</button></div></div>`;
+  const eq=equipment.find(e=>e.id===p.equipamento_id);let resumo="Preventiva programada";try{resumo=JSON.parse(p.observacoes||"{}").resumo||resumo}catch{}
+  return `<div class="tech-card"><div class="tech-photo-placeholder">🧰</div><div><div class="service-type">Preventiva do Dia</div><h2>${esc(equipmentName(p.equipamento_id))}</h2><p><b>TAG:</b> ${esc(eq?.tag||"SEM TAG")} • <b>Área:</b> ${esc(areaName(eq?.area_id))} • <b>Setor:</b> ${esc(sectorName(eq?.setor_id))}</p><p>${esc(resumo)}</p><span class="pill">${p.status}</span> <span class="pill">${parseChecklist(p).length} itens</span></div><div class="tech-actions"><button class="btn primary execPrev" data-id="${p.id}">Executar checklist</button></div></div>`;
 }
 function bindTechnicianButtons(){
-  document.querySelectorAll(".techStatus").forEach(b=>b.onclick=()=>technicianStatusModal(b.dataset.id));
+  document.querySelectorAll(".startOS").forEach(b=>b.onclick=()=>startOS(b.dataset.id,"tecnico"));
   document.querySelectorAll(".detailOS").forEach(b=>b.onclick=()=>detailOS(b.dataset.id));
+  document.querySelectorAll(".finishOS").forEach(b=>b.onclick=()=>finishOSModal(b.dataset.id));
   document.querySelectorAll(".execPrev").forEach(b=>b.onclick=()=>executePreventive(b.dataset.id));
 }
 function technicianStatusModal(id){
@@ -302,7 +328,9 @@ async function equipment360(id){
   const e=equipment.find(x=>x.id===id);
   if(!e)return modal(`<div class="empty">Equipamento não encontrado ou removido.</div>`);
   const eqOrders=orders.filter(o=>o.equipamento_id===id);
+  const eqPreventives=preventives.filter(p=>p.equipamento_id===id);
   const cost=eqOrders.reduce((s,o)=>s+Number(o.custo_material||0)+Number(o.custo_terceiro||0)+Number(o.custo_interno||0),0);
+  const downtime=downtimeHoursForEquipment(id);
   modal(`<h2>Ficha 360° — ${esc(e.nome)}</h2>
     <div class="grid g2">
       <div class="card" style="box-shadow:none">
@@ -313,8 +341,10 @@ async function equipment360(id){
       </div>
       <div class="card" style="box-shadow:none">
         <p><b>Total de OS:</b> ${eqOrders.length}</p>
+        <p><b>Preventivas:</b> ${eqPreventives.length}</p>
         <p><b>OS abertas:</b> ${eqOrders.filter(isOpenOS).length}</p>
-        <p><b>Custo acumulado:</b> R$ ${cost.toFixed(2).replace(".",",")}</p>
+        <p><b>Tempo parado:</b> ${downtime.toFixed(1).replace(".",",")} h</p>
+        <p><b>Custo acumulado:</b> ${formatMoney(cost)}</p>
       </div>
     </div>
     ${canManageCatalog()?`<label class="label">Atualizar status do equipamento</label>
@@ -325,8 +355,8 @@ async function equipment360(id){
       <option ${e.status==="AGUARDANDO_PECA"?"selected":""}>AGUARDANDO_PECA</option>
     </select>
     <button class="btn primary w-full mt" id="saveEqStatus">Salvar status</button>`:""}
-    <h3>Histórico de manutenção</h3>
-    ${eqOrders.length?eqOrders.map(o=>`<div class="history-item"><b>OS ${o.numero} • ${o.status}</b><br>${esc(o.descricao)}<br><small>${o.data_abertura?new Date(o.data_abertura).toLocaleString("pt-BR"):""}</small></div>`).join(""):'<div class="empty">Sem histórico.</div>'}`);
+    <h3>Linha do tempo / histórico</h3>
+    ${eqOrders.length?eqOrders.map(o=>`<div class="history-item"><b>OS ${o.numero} • ${o.status}</b><br>${esc(o.descricao)}<br><small>${o.data_abertura?new Date(o.data_abertura).toLocaleString("pt-BR"):""} • Custo: ${formatMoney(Number(o.custo_material||0)+Number(o.custo_terceiro||0)+Number(o.custo_interno||0))}</small></div>`).join(""):'<div class="empty">Sem histórico.</div>'}`);
   if(canManageCatalog())document.getElementById("saveEqStatus").onclick=async()=>{
     const status=document.getElementById("eqStatus").value;
     const {error}=await sb.from("equipamentos").update({status}).eq("id",id);
@@ -538,8 +568,13 @@ function bindOrders(){
   ["qOS","sOS","pOS"].forEach(id=>document.getElementById(id)?.addEventListener(id==="qOS"?"input":"change",()=>{document.getElementById("osList").innerHTML=renderOrders(ordersFiltered());bindOrderButtons()}));
   bindOrderButtons();
 }
+async function startOS(id,route=currentRoute){
+  const {error}=await sb.from("ordens_servico").update({status:"EM_EXECUCAO",tecnico_id:currentUser.id,data_inicio:new Date().toISOString()}).eq("id",id);
+  if(error)return toast(error.message);
+  await loadBase();toast("OS em execução");renderPage(route);
+}
 function bindOrderButtons(){
-  document.querySelectorAll(".startOS").forEach(b=>b.onclick=async()=>{const {error}=await sb.from("ordens_servico").update({status:"EM_EXECUCAO",tecnico_id:currentUser.id,data_inicio:new Date().toISOString()}).eq("id",b.dataset.id);if(error)return alert(error.message);await loadBase();toast("OS em execução");renderPage("ordens")});
+  document.querySelectorAll(".startOS").forEach(b=>b.onclick=()=>startOS(b.dataset.id,"ordens"));
   document.querySelectorAll(".finishOS").forEach(b=>b.onclick=()=>finishOSModal(b.dataset.id));
   document.querySelectorAll(".detailOS").forEach(b=>b.onclick=()=>detailOS(b.dataset.id));
 }
@@ -610,7 +645,7 @@ async function uploadFiles(files,folder){
 }
 function finishOSModal(id){
   const o=orders.find(x=>x.id===id);if(!o)return modal(`<div class="empty">OS não encontrada ou removida.</div>`);osFiles=[];
-  modal(`<h2>Concluir OS</h2><p><b>${esc(equipmentName(o.equipamento_id))}</b></p><form id="finishOS"><div id="finishMsg" class="photo-help" role="status"></div>${filePicker("os")}<label class="label">Serviço executado</label><textarea id="osSolution" class="input" required></textarea><div class="formgrid"><div><label class="label">Peças/material</label><input id="osParts" class="input"></div><div><label class="label">Custo material (R$)</label><input id="osCost" class="input" type="number" min="0" step="0.01" value="0"></div></div><button type="submit" class="btn primary w-full mt">Concluir e sincronizar</button></form>`);
+  modal(`<h2>Concluir OS</h2><p><b>${esc(equipmentName(o.equipamento_id))}</b></p><form id="finishOS"><div id="finishMsg" class="photo-help" role="status"></div>${filePicker("os")}<label class="label">Serviço executado</label><textarea id="osSolution" class="input" required></textarea><div class="formgrid"><div><label class="label">Tempo gasto (minutos)</label><input id="osTimeSpent" class="input" type="number" min="1" step="1" required></div><div><label class="label">Custo material (R$)</label><input id="osCost" class="input" type="number" min="0" step="0.01" value="0"></div><div><label class="label">Peças/material</label><input id="osParts" class="input"></div><div><label class="label">Observações</label><input id="osNotes" class="input"></div></div><button type="submit" class="btn primary w-full mt">Concluir e sincronizar</button></form>`);
   bindFilePicker("os",osFiles,null,"finishMsg");
   document.getElementById("finishOS").onsubmit=async e=>{
     e.preventDefault();const msg=document.getElementById("finishMsg");if(msg)msg.textContent="";if(!osFiles.length){if(msg)msg.textContent="Adicione pelo menos uma foto usando Câmera ou Galeria.";return}
@@ -618,8 +653,10 @@ function finishOSModal(id){
       const btn=e.target.querySelector("button");btn.disabled=true;btn.textContent="Enviando fotos...";
       const files=await uploadFiles(osFiles,`os-${id}`);
       for(const x of files){const {error:attachError}=await sb.from("os_anexos").insert({os_id:id,unidade_id:unitId,usuario_id:currentUser.id,tipo:"foto",origem:"conclusao",arquivo_nome:x.name,arquivo_url:x.url,mime_type:x.mime,tamanho_bytes:x.size});if(attachError)throw attachError;}
-      const cost=Number(document.getElementById("osCost").value||0),solution=document.getElementById("osSolution").value,parts=document.getElementById("osParts").value;
-      const {error}=await sb.from("ordens_servico").update({status:"CONCLUIDA",solucao:solution+(parts?` | Peças: ${parts}`:""),custo_material:cost,data_conclusao:new Date().toISOString(),tecnico_id:currentUser.id}).eq("id",id);
+      const cost=Number(document.getElementById("osCost").value||0),solution=document.getElementById("osSolution").value,parts=document.getElementById("osParts").value,notes=document.getElementById("osNotes").value,timeSpent=Number(document.getElementById("osTimeSpent").value||0);
+      if(!timeSpent||timeSpent<1)throw new Error("Informe o tempo gasto em minutos.");
+      const finalSolution=[solution,`Tempo gasto: ${timeSpent} min`,parts?`Peças: ${parts}`:"",notes?`Observações: ${notes}`:""].filter(Boolean).join(" | ");
+      const {error}=await sb.from("ordens_servico").update({status:"CONCLUIDA",solucao:finalSolution,custo_material:cost,data_conclusao:new Date().toISOString(),tecnico_id:currentUser.id}).eq("id",id);
       if(error)throw error;
       if(cost>0){const {error:costError}=await sb.from("os_custos").insert({os_id:id,unidade_id:unitId,usuario_id:currentUser.id,tipo:"material",descricao:parts||"Material utilizado",valor:cost});if(costError)throw costError;}
       if(o.equipamento_id){
