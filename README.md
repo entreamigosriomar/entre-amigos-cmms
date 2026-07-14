@@ -1,23 +1,121 @@
-# V16.1 — Estável
+# V17 — Modularização, Estabilização e Auditoria de Produção
 
-Correções desta versão:
+Esta branch reorganiza a aplicação CMMS para manter compatibilidade com GitHub Pages e estabilizar o fluxo de abertura de Ordem de Serviço com fotos em Android, iPhone e desktop.
 
-- corrigido erro `Cannot set properties of null (setting 'disabled')`;
-- botão Enviar chamado identificado corretamente;
-- abertura de OS com foto não quebra ao enviar;
-- formulário continua preservando problema e descrição;
-- proteção semelhante aplicada à conclusão de preventivas;
-- botões críticos agora usam `type="submit"`;
-- código tolera alterações futuras no botão do formulário.
+## Como testar localmente
 
-## Como atualizar
+1. Abra `index.html` por um servidor estático simples ou pelo GitHub Pages da branch.
+2. Execute o smoke test estático:
 
-1. No GitHub, substitua:
-   - `index.html`
-   - `README.md`
-2. Aguarde o GitHub Pages ficar verde.
-3. Feche completamente a aba nos celulares.
-4. Abra novamente o endereço do sistema.
-5. Teste uma OS com problema, descrição e foto.
+```bash
+npm test
+```
 
-Não há migração SQL nova nesta versão.
+## Principais mudanças
+
+- HTML principal reduzido e carregando CSS/JS externos.
+- Código separado em `src/` por configuração, estado, serviços, domínio, UI e páginas.
+- Fluxo de abertura de OS preservado e reforçado com unidade, área, setor, categoria, equipamento, prioridade, problema, descrição e fotos.
+- Câmera e galeria separadas, múltiplas fotos, miniaturas, remoção de fotos, validação de tipo, limite de 8 fotos e 10 MB por imagem.
+- Campos e fotos são preservados em erro de upload/gravação, com proteção contra duplo envio.
+- Multiunidade com seletor para MASTER, ADMIN e DIRETOR; técnicos ficam restritos à unidade do perfil.
+- Realtime recriado ao trocar unidade e sem polling que recria formulários em preenchimento.
+- Status de OS padronizados nos filtros, com CANCELADA fora de abertas.
+- Indicador “Custo do Mês” filtrado pelo mês corrente.
+
+## Teste de homologação
+
+A branch pode ser publicada temporariamente em dois formatos de URL:
+
+- GitHub Pages em subdiretório: `/entre-amigos-cmms/`
+- Hospedagem temporária na raiz: `/`
+
+Os caminhos do HTML usam referências relativas (`./src/styles.css` e `./src/app.js`), portanto funcionam nos dois formatos acima.
+
+### Comando local
+
+```bash
+python3 -m http.server 4173
+```
+
+Depois acesse:
+
+```text
+http://127.0.0.1:4173/index.html
+```
+
+### Checklist manual obrigatório
+
+1. Login com usuário real do Supabase.
+2. Troca de unidade com MASTER/ADMIN/DIRETOR.
+3. Restrição de unidade para técnico/operador.
+4. Abertura de OS sem foto deve bloquear com mensagem na tela.
+5. Abertura de OS com câmera no Android.
+6. Abertura de OS com galeria no Android.
+7. Abertura de OS com câmera no iPhone.
+8. Abertura de OS com galeria no iPhone.
+9. Abertura de OS com múltiplas fotos no desktop.
+10. Realtime em duas abas sem apagar formulário aberto.
+
+## Homologação V17 — 2026-07-13
+
+Versão em homologação: **V17**.
+
+Esta atualização existe para disparar uma implantação de pré-visualização na Vercel e orientar o teste real em dispositivos.
+
+### Checklist Android
+
+- Abrir OS sem foto e confirmar bloqueio com mensagem na tela.
+- Abrir câmera pelo Chrome Android e enviar uma foto.
+- Abrir galeria pelo Chrome Android e enviar múltiplas fotos.
+- Remover uma foto antes do envio.
+- Confirmar que problema, descrição, área, setor, categoria, equipamento e prioridade não são apagados após usar câmera/galeria.
+
+### Checklist iPhone
+
+- Abrir OS sem foto e confirmar bloqueio com mensagem na tela.
+- Abrir câmera pelo Safari iPhone e enviar uma foto.
+- Abrir galeria pelo Safari iPhone e enviar múltiplas fotos.
+- Remover uma foto antes do envio.
+- Confirmar que problema, descrição, área, setor, categoria, equipamento e prioridade não são apagados após usar câmera/galeria.
+
+### Checklist desktop
+
+- Abrir OS com uma imagem.
+- Abrir OS com múltiplas imagens.
+- Validar bloqueio para arquivo não imagem.
+- Validar limite de 8 imagens.
+- Validar limite de 10 MB por imagem.
+- Testar troca de unidade com MASTER/ADMIN/DIRETOR.
+- Testar que técnico/operador não troca unidade.
+- Testar Realtime em duas abas sem apagar formulário aberto.
+
+## Banco de dados
+
+Não há alteração destrutiva ou migração SQL nova nesta versão.
+
+
+# V18 — Operação Real RioMar Recife
+
+Objetivo principal: preparar a plataforma para testes operacionais reais na unidade RioMar Recife, priorizando estabilidade, simplicidade e experiência do técnico.
+
+## Escopo V18
+
+- Painel exclusivo do técnico com Serviços do Dia, Preventivas do Dia, OS Aguardando Peça, OS Terceirizadas e OS Aguardando Aprovação.
+- Cartões técnicos com foto, número da OS, TAG, equipamento, área, setor, prioridade, tempo desde abertura e solicitante.
+- Botão **▶ Iniciar Serviço** alterando a OS para `EM_EXECUCAO`.
+- Conclusão de OS com foto, descrição do serviço e tempo gasto obrigatórios; peças, custos e observações opcionais.
+- Equipamento 360 com TAG, status, custos, quantidade de OS, preventivas, tempo parado e linha do tempo/histórico.
+- Multiunidade: MASTER pode alternar unidade; demais usuários ficam restritos à unidade do perfil.
+
+## Checklist de teste V18
+
+1. Entrar como técnico e confirmar que não aparecem Dashboard administrativo, Cadastros, Custos, Configurações ou Relatórios administrativos.
+2. Validar cartões de Serviços do Dia com foto, número da OS, TAG, equipamento, área, setor, prioridade, tempo desde abertura e solicitante.
+3. Clicar em **▶ Iniciar Serviço** e confirmar mudança para `EM_EXECUCAO`.
+4. Concluir OS exigindo foto, descrição e tempo gasto.
+5. Repetir conclusão com múltiplas fotos em Android, iPhone e desktop.
+6. Validar as filas OS Aguardando Peça, OS Terceirizadas e OS Aguardando Aprovação.
+7. Abrir ficha 360° de equipamento e conferir custos, quantidade de OS, preventivas, tempo parado e histórico.
+8. Entrar como MASTER e alternar unidade.
+9. Entrar como usuário não MASTER e confirmar restrição à unidade do perfil.
