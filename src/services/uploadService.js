@@ -1,0 +1,2 @@
+import {sb} from '../config/supabase.js';
+export async function uploadFiles(files,unitId,folder){const urls=[];for(const f of files){const ext=(f.name.split('.').pop()||'jpg').toLowerCase();const path=`${unitId}/${folder}/${Date.now()}-${crypto.randomUUID()}.${ext}`;const {error}=await sb.storage.from('os-anexos').upload(path,f,{contentType:f.type,upsert:false});if(error)throw new Error(`Falha ao enviar ${f.name}: ${error.message}`);const {data}=sb.storage.from('os-anexos').getPublicUrl(path);urls.push({url:data.publicUrl,name:f.name,mime:f.type,size:f.size});}return urls;}
