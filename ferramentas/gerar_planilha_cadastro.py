@@ -3,9 +3,13 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.formatting.rule import FormulaRule
+import datetime
 from openpyxl.comments import Comment
 
-R=json.load(open('/home/claude/biblioteca/biblioteca.json'))
+import sys, os
+BIB=sys.argv[1] if len(sys.argv)>1 else '/home/claude/biblioteca/biblioteca.json'
+OUT=sys.argv[2] if len(sys.argv)>2 else 'Cadastro_Equipamentos_RioMar_Recife.xlsx'
+R=json.load(open(BIB))
 NAVY="13254A"; ORANGE="E94D10"; GRAY="5B6B85"; LIGHT="EEF1F6"; INPUT="FFF7E0"
 F=lambda **k: Font(name="Arial", **k)
 thin=Side(style="thin", color="C9D3E3"); border=Border(left=thin,right=thin,top=thin,bottom=thin)
@@ -14,7 +18,8 @@ FREQ={"SEMANAL":"semanal","MENSAL":"mensal","TRIMESTRAL":"trimestral","QUADRIMES
 POR_LOJA={"Rede de gás","Sistema saponificante, CO₂ e dampers","Sistema de detecção de gás","Alarme e detectores de fumaça","Bomba dos hidrantes","Brigada de incêndio","Tubulação de gás","Servidor e rack","Gerador"}
 tipos=collections.OrderedDict()
 for r in R:
-    t=tipos.setdefault(r["tipo_equipamento"],{"fam":FAM[r["familia"]],"rot":[],"fx":set()})
+    t=tipos.setdefault(r["tipo_equipamento"],{"fam":FAM[r["familia"]],"rot":[],"fx":set(),"fq":set()})
+    t["fq"].add(r["frequencia"])
     t["rot"].append(f'{r["codigo"]} ({FREQ[r["frequencia"]]}{", terceirizada" if r["executor"]=="TERCEIRIZADA" else ""})')
     for i in r["itens"]:
         if i["faixa_equipamento"]: t["fx"].add(i["unidade"])
@@ -30,7 +35,7 @@ ws=wb.active; ws.title="Instruções"
 ws.sheet_view.showGridLines=False
 ws.column_dimensions["A"].width=3; ws.column_dimensions["B"].width=28; ws.column_dimensions["C"].width=90
 ws["B2"]="Cadastro de equipamentos — RioMar Recife"; ws["B2"].font=F(size=18,bold=True,color=NAVY)
-ws["B3"]="Plataforma de Manutenção Entre Amigos · modelo para importação · versão 23/10/2026"; ws["B3"].font=F(size=10,color=GRAY)
+ws["B3"]="Plataforma de Manutenção Entre Amigos · modelo para importação · versão 23/10/2026 (rev. última vez feita)"; ws["B3"].font=F(size=10,color=GRAY)
 linhas=[
 ("Objetivo","Cadastrar todos os equipamentos e itens da loja. Cada linha vira um equipamento no sistema, com suas preventivas criadas automaticamente pelo Tipo."),
 ("Onde preencher","Aba Equipamentos, a partir da linha 6. As linhas 4 e 5 são exemplos: pode apagar ou sobrescrever."),
@@ -40,6 +45,7 @@ linhas=[
 ("Uma linha por item","3 balcões iguais = 3 linhas, com nomes diferentes: Balcão refrigerado 01, 02 e 03."),
 ("Tipo","Escolha na lista. Ele define as preventivas do equipamento (veja a aba Tipos). Itens sem preventiva (cadeira, aparador, tela do KDS) usam Mobiliário, TI e KDS, Predial e estrutura ou Outro equipamento: servem para abrir chamados."),
 ("Sistemas da loja","Rede de gás, detecção de gás, alarme, gerador, brigada e similares: cadastre 1 linha por loja (Área Técnica, por exemplo)."),
+("Última vez feita","Para preventivas trimestrais, semestrais e anuais, informe a data da última vez que foi feita (ex.: limpeza de dutos, recarga de extintor). O sistema calcula a próxima: as colunas Próxima mostram o mês estimado. Em branco = a preventiva entra já no 1º mês. Fica cinza quando o tipo não tem essa frequência."),
 ("Faixas","Preencha só quando a coluna Faixas necessárias pedir. Use o valor do fabricante; para temperatura, o combinado com a nutrição."),
 ("Áreas e setores","Ajuste a lista na aba Áreas e setores antes de começar. As colunas Área e Setor usam essa lista."),
 ("Conferência","A coluna Conferência mostra OK ou o que falta. Envie a planilha só quando todas as linhas estiverem OK."),
@@ -83,22 +89,22 @@ wt=wb.create_sheet("Tipos")
 wt.sheet_view.showGridLines=False
 wt["A1"]="Tipos de equipamento e preventivas que cada um gera"; wt["A1"].font=F(size=14,bold=True,color=NAVY)
 wt["A2"]="Fonte: Biblioteca de rotinas aprovada em 23/10/2026 (51 rotinas). Não editar: é a referência da importação."; wt["A2"].font=F(size=10,color=GRAY)
-hdr=["Tipo","Família","Preventivas criadas","Faixas necessárias","Como cadastrar","Categoria sugerida"]
+hdr=["Tipo","Família","Preventivas criadas","Faixas necessárias","Como cadastrar","Categoria sugerida","Frequências"]
 for j,h in enumerate(hdr):
     c=wt.cell(row=4,column=j+1,value=h); c.font=F(bold=True,color="FFFFFF"); c.fill=PatternFill("solid",fgColor=NAVY); c.border=border
 row=5
 for t,v in tipos.items():
     fx=", ".join(FXNOME[u] for u in ["°C","V","A","psi","s"] if u in v["fx"]) or "—"
-    vals=[t,v["fam"],"; ".join(v["rot"]),fx,"1 por loja" if t in POR_LOJA else "1 linha por equipamento",CATSUG[v["fam"]]]
+    vals=[t,v["fam"],"; ".join(v["rot"]),fx,"1 por loja" if t in POR_LOJA else "1 linha por equipamento",CATSUG[v["fam"]],",".join(sorted(v["fq"]))]
     for j,x in enumerate(vals):
         c=wt.cell(row=row,column=j+1,value=x); c.font=F(size=10); c.border=border; c.alignment=Alignment(wrap_text=True,vertical="top")
     row+=1
 for t,fam,rot in extras:
-    for j,x in enumerate([t,fam,"; ".join(rot),"—","1 linha por item",EXCAT[t]]):
+    for j,x in enumerate([t,fam,"; ".join(rot),"—","1 linha por item",EXCAT[t],""]):
         c=wt.cell(row=row,column=j+1,value=x); c.font=F(size=10,italic=True); c.border=border; c.alignment=Alignment(wrap_text=True,vertical="top")
     row+=1
 last_tipo=row-1
-for col,w in zip("ABCDEF",[36,22,58,34,22,24]): wt.column_dimensions[col].width=w
+for col,w in zip("ABCDEFG",[36,22,58,34,22,24,28]): wt.column_dimensions[col].width=w
 
 # ---------------- Equipamentos ----------------
 we=wb.create_sheet("Equipamentos",1)
@@ -109,7 +115,9 @@ we["A2"]="Preencha a partir da linha 6. Linhas 4 e 5 são exemplos. Laranja = ob
 cols=[("Unidade",False,16,True),("Área",True,18,False),("Setor",True,24,False),("Equipamento",True,30,False),("Tipo",True,34,False),("Categoria",True,22,False),
       ("Fabricante",False,16,False),("Modelo",False,16,False),("Nº de série",False,16,False),
       ("Tensão (V)",False,11,False),("Corrente nominal (A)",False,12,False),("Temp. mínima (°C)",False,11,False),("Temp. máxima (°C)",False,11,False),
-      ("Observações",False,30,False),("Preventivas que serão criadas",None,48,True),("Faixas necessárias",None,26,True),("Conferência",None,30,True),("Família",None,20,True)]
+      ("Observações",False,30,False),("Última trimestral",False,13,False),("Última semestral",False,13,False),("Última anual",False,13,False),
+      ("Próxima trimestral",None,13,True),("Próxima semestral",None,13,True),("Próxima anual",None,13,True),
+      ("Preventivas que serão criadas",None,48,True),("Faixas necessárias",None,26,True),("Conferência",None,30,True),("Família",None,20,True)]
 HR=3
 for j,(h,req,w,calc) in enumerate(cols,1):
     c=we.cell(row=HR,column=j,value=h)
@@ -119,21 +127,31 @@ for j,(h,req,w,calc) in enumerate(cols,1):
     we.column_dimensions[c.column_letter].width=w
 we.row_dimensions[HR].height=36
 we["I3"].comment=Comment("Opcional. Deixe em branco se o equipamento não tiver ou não for possível ver.","Plataforma")
+we["O3"].comment=Comment("Data da última vez feita (dd/mm/aaaa). Só para tipos com preventiva trimestral. Em branco = entra já no 1º mês.","Plataforma")
+we["P3"].comment=Comment("Data da última vez feita (dd/mm/aaaa). Só para tipos com preventiva semestral. Em branco = entra já no 1º mês.","Plataforma")
+we["Q3"].comment=Comment("Data da última vez feita (dd/mm/aaaa). Só para tipos com preventiva anual. Em branco = entra já no 1º mês.","Plataforma")
 we["L3"].comment=Comment("Para refrigeração: faixa combinada com a nutrição (ex.: congelados −22 a −18).","Plataforma")
 FIRST,LAST=4,303
 ex=[["RioMar Recife","Cozinha","Sobremesa","Micro-ondas","Outro equipamento","Equipamentos de cozinha","","","","220","","","","Exemplo: item só para chamados"],
     ["RioMar Recife","Salão","Salão frente do bar","Aparador","Mobiliário","Móveis","","","","","","","","Exemplo: item só para chamados"]]
 for r in range(FIRST,LAST+1):
-    for j in range(1,15):
+    for j in range(1,18):
         c=we.cell(row=r,column=j); c.border=border; c.font=F(size=10,italic=(r<6),color=(GRAY if r<6 else "0F1B33"))
         c.fill=PatternFill("solid",fgColor=INPUT)
     we.cell(row=r,column=1,value="RioMar Recife") if r>=6 else None
     # calculados
-    we.cell(row=r,column=15,value=f'=IF($E{r}="","",IFERROR(INDEX(Tipos!$C$5:$C${last_tipo},MATCH($E{r},Tipos!$A$5:$A${last_tipo},0)),"Tipo não encontrado"))')
-    we.cell(row=r,column=16,value=f'=IF($E{r}="","",IFERROR(INDEX(Tipos!$D$5:$D${last_tipo},MATCH($E{r},Tipos!$A$5:$A${last_tipo},0)),""))')
-    we.cell(row=r,column=17,value=f'=IF(COUNTA($B{r}:$F{r})=0,"",IF($B{r}="","Falta Área",IF($C{r}="","Falta Setor",IF($D{r}="","Falta Equipamento",IF($E{r}="","Falta Tipo",IF($F{r}="","Falta Categoria",IF(COUNTIF($D${FIRST}:$D${LAST},$D{r})>1,"Nome repetido: diferencie (01, 02…)",IF(AND(ISNUMBER(SEARCH("Temperatura",$P{r})),OR($L{r}="",$M{r}="")),"Falta faixa de temperatura",IF(AND(ISNUMBER($L{r}),ISNUMBER($M{r}),$L{r}>$M{r}),"Temp. mínima maior que a máxima","OK")))))))))')
-    we.cell(row=r,column=18,value=f'=IF($E{r}="","",IFERROR(INDEX(Tipos!$B$5:$B${last_tipo},MATCH($E{r},Tipos!$A$5:$A${last_tipo},0)),""))')
-    for j in (15,16,17,18):
+    FQ=f'IFERROR(INDEX(Tipos!$G$5:$G${last_tipo},MATCH($E{r},Tipos!$A$5:$A${last_tipo},0)),"")'
+    for j,(inp,fr,meses) in enumerate([("O","TRIMESTRAL",3),("P","SEMESTRAL",6),("Q","ANUAL",12)]):
+        we.cell(row=r,column=18+j,value=f'=IF(ISNUMBER(SEARCH("{fr}",{FQ})),IF(${inp}{r}="","Entra já",IF(ISNUMBER(${inp}{r}),EDATE(${inp}{r},{meses}),"Data inválida")),"")')
+    we.cell(row=r,column=21,value=f'=IF($E{r}="","",IFERROR(INDEX(Tipos!$C$5:$C${last_tipo},MATCH($E{r},Tipos!$A$5:$A${last_tipo},0)),"Tipo não encontrado"))')
+    we.cell(row=r,column=22,value=f'=IF($E{r}="","",IFERROR(INDEX(Tipos!$D$5:$D${last_tipo},MATCH($E{r},Tipos!$A$5:$A${last_tipo},0)),""))')
+    we.cell(row=r,column=23,value=f'=IF(COUNTA($B{r}:$F{r})=0,"",IF($B{r}="","Falta Área",IF($C{r}="","Falta Setor",IF($D{r}="","Falta Equipamento",IF($E{r}="","Falta Tipo",IF($F{r}="","Falta Categoria",IF(COUNTIF($D${FIRST}:$D${LAST},$D{r})>1,"Nome repetido: diferencie (01, 02…)",IF(AND(ISNUMBER(SEARCH("Temperatura",$V{r})),OR($L{r}="",$M{r}="")),"Falta faixa de temperatura",IF(AND(ISNUMBER($L{r}),ISNUMBER($M{r}),$L{r}>$M{r}),"Temp. mínima maior que a máxima",IF(COUNTIF($R{r}:$T{r},"Data inválida")>0,"Data de última vez inválida",IF(OR(AND(ISNUMBER($O{r}),$O{r}>TODAY()),AND(ISNUMBER($P{r}),$P{r}>TODAY()),AND(ISNUMBER($Q{r}),$Q{r}>TODAY())),"Última vez no futuro","OK")))))))))))')
+    we.cell(row=r,column=24,value=f'=IF($E{r}="","",IFERROR(INDEX(Tipos!$B$5:$B${last_tipo},MATCH($E{r},Tipos!$A$5:$A${last_tipo},0)),""))')
+    for j in (15,16,17):
+        we.cell(row=r,column=j).number_format='DD/MM/YYYY'
+    for j in (18,19,20):
+        we.cell(row=r,column=j).number_format='MM/YYYY'
+    for j in range(18,25):
         c=we.cell(row=r,column=j); c.fill=PatternFill("solid",fgColor=LIGHT); c.border=border; c.font=F(size=10,color=GRAY); c.alignment=Alignment(wrap_text=True,vertical="top")
 for i,vals in enumerate(ex):
     for j,v in enumerate(vals,1):
@@ -143,37 +161,44 @@ for i,vals in enumerate(ex):
 for r in range(FIRST,LAST+1):
     for j in (11,12,13): we.cell(row=r,column=j).number_format='0.0;-0.0'
 # conferência destaque
-we.conditional_formatting.add(f"Q{FIRST}:Q{LAST}",FormulaRule(formula=[f'$Q{FIRST}="OK"'],font=Font(name="Arial",color="1F7A45",bold=True),fill=PatternFill("solid",fgColor="DDF3E4")))
-we.conditional_formatting.add(f"Q{FIRST}:Q{LAST}",FormulaRule(formula=[f'AND($Q{FIRST}<>"",$Q{FIRST}<>"OK")'],font=Font(name="Arial",color="9F1D12",bold=True),fill=PatternFill("solid",fgColor="FDE3DF")))
+we.conditional_formatting.add(f"W{FIRST}:W{LAST}",FormulaRule(formula=[f'$W{FIRST}="OK"'],font=Font(name="Arial",color="1F7A45",bold=True),fill=PatternFill("solid",fgColor="DDF3E4")))
+we.conditional_formatting.add(f"W{FIRST}:W{LAST}",FormulaRule(formula=[f'AND($W{FIRST}<>"",$W{FIRST}<>"OK")'],font=Font(name="Arial",color="9F1D12",bold=True),fill=PatternFill("solid",fgColor="FDE3DF")))
+# Última vez: cinza quando o tipo não tem a frequência; próxima vencida em vermelho
+for inp,calc in (("O","R"),("P","S"),("Q","T")):
+    we.conditional_formatting.add(f"{inp}{FIRST}:{inp}{LAST}",FormulaRule(formula=[f'AND($E{FIRST}<>"",${calc}{FIRST}="")'],fill=PatternFill("solid",fgColor="D9DEE7")))
+    we.conditional_formatting.add(f"{calc}{FIRST}:{calc}{LAST}",FormulaRule(formula=[f'AND(ISNUMBER(${calc}{FIRST}),${calc}{FIRST}<DATE(YEAR(TODAY()),MONTH(TODAY()),1))'],font=Font(name="Arial",color="9F1D12",bold=True)))
+    we.conditional_formatting.add(f"{calc}{FIRST}:{calc}{LAST}",FormulaRule(formula=[f'${calc}{FIRST}="Entra já"'],font=Font(name="Arial",color="B45309",bold=True)))
 # validações
 dv_area=DataValidation(type="list",formula1="='Áreas e setores'!$D$5:$D$34",allow_blank=True,showErrorMessage=True,errorTitle="Área",error="Escolha uma área da lista (aba Áreas e setores).")
 dv_setor=DataValidation(type="list",formula1="='Áreas e setores'!$B$5:$B$84",allow_blank=True,showErrorMessage=True,errorTitle="Setor",error="Escolha um setor da lista (aba Áreas e setores).")
 dv_tipo=DataValidation(type="list",formula1=f"=Tipos!$A$5:$A${last_tipo}",allow_blank=True,showErrorMessage=True,errorTitle="Tipo",error="Escolha um tipo da lista (aba Tipos).")
 dv_cat=DataValidation(type="list",formula1="=Categorias!$A$5:$A$40",allow_blank=True,showErrorMessage=True,errorTitle="Categoria",error="Escolha uma categoria da lista (aba Categorias).")
 dv_v=DataValidation(type="list",formula1='"127,220,380"',allow_blank=True)
+dv_data=DataValidation(type="date",operator="between",formula1="DATE(2015,1,1)",formula2="TODAY()",allow_blank=True,showErrorMessage=True,errorTitle="Última vez feita",error="Digite uma data (dd/mm/aaaa) até hoje.")
 dv_num=DataValidation(type="decimal",operator="between",formula1="-60",formula2="400",allow_blank=True,showErrorMessage=True,error="Digite só o número.")
-for dv,rng in [(dv_area,f"B{FIRST}:B{LAST}"),(dv_setor,f"C{FIRST}:C{LAST}"),(dv_tipo,f"E{FIRST}:E{LAST}"),(dv_v,f"J{FIRST}:J{LAST}"),(dv_num,f"K{FIRST}:M{LAST}"),(dv_cat,f"F{FIRST}:F{LAST}")]:
+for dv,rng in [(dv_area,f"B{FIRST}:B{LAST}"),(dv_setor,f"C{FIRST}:C{LAST}"),(dv_tipo,f"E{FIRST}:E{LAST}"),(dv_v,f"J{FIRST}:J{LAST}"),(dv_num,f"K{FIRST}:M{LAST}"),(dv_cat,f"F{FIRST}:F{LAST}"),(dv_data,f"O{FIRST}:Q{LAST}")]:
     we.add_data_validation(dv); dv.add(rng)
-we.auto_filter.ref=f"A{HR}:R{LAST}"
+we.auto_filter.ref=f"A{HR}:X{LAST}"
 
 # ---------------- Resumo ----------------
 wr=wb.create_sheet("Resumo",2)
 wr.sheet_view.showGridLines=False
 wr["A1"]="Resumo do cadastro"; wr["A1"].font=F(size=14,bold=True,color=NAVY)
 items=[("Linhas preenchidas (sem exemplos)",f'=COUNTA(Equipamentos!D6:D{LAST})'),
-       ("Linhas OK",f'=COUNTIF(Equipamentos!Q6:Q{LAST},"OK")'),
+       ("Linhas OK",f'=COUNTIF(Equipamentos!W6:W{LAST},"OK")'),
        ("Linhas com pendência",f'=B4-B5'),
-       ("Itens só para chamados",f'=COUNTIF(Equipamentos!O6:O{LAST},"Só chamados")'),
-       ("Equipamentos com preventiva",f'=B5-COUNTIFS(Equipamentos!O6:O{LAST},"Só chamados",Equipamentos!Q6:Q{LAST},"OK")')]
+       ("Itens só para chamados",f'=COUNTIF(Equipamentos!U6:U{LAST},"Só chamados")'),
+       ("Equipamentos com preventiva",f'=B5-COUNTIFS(Equipamentos!U6:U{LAST},"Só chamados",Equipamentos!W6:W{LAST},"OK")'),
+       ("Preventivas longas sem data (entram já)",f'=COUNTIF(Equipamentos!R6:T{LAST},"Entra já")')]
 for i,(a,f) in enumerate(items):
     wr.cell(row=4+i,column=1,value=a).font=F(size=11)
     c=wr.cell(row=4+i,column=2,value=f); c.font=F(size=11,bold=True,color=NAVY); c.border=border
 wr.column_dimensions["A"].width=38; wr.column_dimensions["B"].width=12
-wr["A10"]="Por família"; wr["A10"].font=F(bold=True,color=NAVY,size=11)
+wr["A11"]="Por família"; wr["A11"].font=F(bold=True,color=NAVY,size=11)
 fams=list(dict.fromkeys(v["fam"] for v in tipos.values()))+["Sem preventiva"]
 for i,fam in enumerate(fams):
-    wr.cell(row=11+i,column=1,value=fam).font=F(size=11)
-    c=wr.cell(row=11+i,column=2,value=f'=COUNTIF(Equipamentos!$R$6:$R${LAST},"{fam}")')
+    wr.cell(row=12+i,column=1,value=fam).font=F(size=11)
+    c=wr.cell(row=12+i,column=2,value=f'=COUNTIF(Equipamentos!$X$6:$X${LAST},"{fam}")')
     c.font=F(size=11); c.border=border
 wc=wb.create_sheet("Categorias",3)
 wc.sheet_view.showGridLines=False
@@ -186,5 +211,5 @@ for i in range(36):
     c=wc.cell(row=5+i,column=1,value=CATEGORIAS[i] if i<len(CATEGORIAS) else None); c.fill=PatternFill("solid",fgColor=INPUT); c.font=F(size=11); c.border=border
     d=wc.cell(row=5+i,column=2,value=EXS.get(CATEGORIAS[i]) if i<len(CATEGORIAS) else None); d.font=F(size=10,color=GRAY); d.border=border
 wc.column_dimensions["A"].width=26; wc.column_dimensions["B"].width=46
-wb.save("Cadastro_Equipamentos_RioMar_Recife.xlsx")
+wb.save(OUT)
 print("ok", last_tipo)

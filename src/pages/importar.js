@@ -1,7 +1,8 @@
 // Importação da planilha de cadastro (Cadastro_Equipamentos_*.xlsx): áreas, setores, categorias, equipamentos, planos e faixas.
 import { sb } from '../config/supabase.js';
-import { S, unitName, tiposBiblioteca, TIPOS_SEM_PREVENTIVA, rotinasDoTipo, loadBase, loadLibrary } from '../core/state.js';
-import { esc, icon, toast, errMsg, busy } from '../core/util.js';
+import { S, unitName, tiposBiblioteca, TIPOS_SEM_PREVENTIVA, rotinasDoTipo, loadBase, loadLibrary, FREQ } from '../core/state.js';
+import { esc, icon, toast, errMsg, busy, todayISO, monthLabel } from '../core/util.js';
+import { proximaPelaUltima } from '../core/agenda.js';
 import { criarEquipamento } from './equipamentos.js';
 
 const XLSX_URL = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
@@ -10,6 +11,17 @@ function loadXLSX() {
   return new Promise((ok, fail) => { const s = document.createElement('script'); s.src = XLSX_URL; s.onload = () => ok(window.XLSX); s.onerror = () => fail(new Error('Não foi possível carregar o leitor de planilhas. Verifique a internet.')); document.head.appendChild(s); });
 }
 const norm = s => String(s ?? '').trim();
+// Data da planilha: número de série do Excel, dd/mm/aaaa ou aaaa-mm-dd → 'aaaa-mm-dd' ('' se vazio, null se inválida)
+function dataPlanilha(v) {
+  if (v === '' || v === null || v === undefined) return '';
+  if (typeof v === 'number') return v > 20000 && v < 80000 ? new Date(Math.round((v - 25569) * 864e5)).toISOString().slice(0, 10) : null;
+  const t = String(v).trim(); let m;
+  if ((m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/))) { const y = m[3].length === 2 ? '20' + m[3] : m[3]; return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
+  if ((m = t.match(/^(\d{1,2})\/(\d{4})$/))) return `${m[2]}-${m[1].padStart(2, '0')}-01`;
+  if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
+  return null;
+}
+const ULTIMAS = [['TRIMESTRAL', 'Última trimestral'], ['SEMESTRAL', 'Última semestral'], ['ANUAL', 'Última anual']];
 const key = s => norm(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 export async function render(el) {
@@ -50,7 +62,8 @@ export async function render(el) {
         n: hi + k + 2, unidade: norm(get(r, 'Unidade')), area: norm(get(r, 'Área')), setor: norm(get(r, 'Setor')), nome: norm(get(r, 'Equipamento')),
         tipo: norm(get(r, 'Tipo')), categoria: norm(get(r, 'Categoria')), fabricante: norm(get(r, 'Fabricante')), modelo: norm(get(r, 'Modelo')),
         serie: norm(get(r, 'Nº de série')), tensao: get(r, 'Tensão (V)'), corrente: get(r, 'Corrente nominal (A)'),
-        tmin: get(r, 'Temp. mínima (°C)'), tmax: get(r, 'Temp. máxima (°C)'), obs: norm(get(r, 'Observações'))
+        tmin: get(r, 'Temp. mínima (°C)'), tmax: get(r, 'Temp. máxima (°C)'), obs: norm(get(r, 'Observações')),
+        ultimasRaw: Object.fromEntries(ULTIMAS.map(([f, h]) => [f, dataPlanilha(get(r, h))]))
       })).filter(l => l.nome && !/^exemplo/i.test(l.obs));
       const wc = wb.Sheets['Categorias'];
       cats = wc ? X.utils.sheet_to_json(wc, { header: 1, defval: '' }).slice(4).map(r => norm(r[0])).filter(Boolean) : [];
@@ -71,6 +84,15 @@ export async function render(el) {
       if (!l.area) l.erros.push('Área'); if (!l.setor) l.erros.push('Setor'); if (!l.tipo) l.erros.push('Tipo'); if (!l.categoria) l.erros.push('Categoria');
       if (l.tipo && !tipos.has(key(l.tipo))) l.erros.push('Tipo desconhecido');
       if (l.tmin !== '' && l.tmax !== '' && Number(l.tmin) > Number(l.tmax)) l.erros.push('Temp. mín > máx');
+      const hoje = todayISO(), freqs = new Set(rotinasDoTipo(tiposBiblioteca().find(t => key(t) === key(l.tipo))).map(r => r.frequencia));
+      l.ultimas = {}; l.proximas = [];
+      ULTIMAS.forEach(([f, h]) => {
+        const d = l.ultimasRaw[f];
+        if (d === null) l.erros.push(h + ' inválida');
+        else if (d && d > hoje) l.erros.push(h + ' no futuro');
+        else if (d && freqs.has(f)) { l.ultimas[f] = d; const px = proximaPelaUltima(d, f); l.proximas.push(`${FREQ[f]}: ${px.slice(0, 7) <= hoje.slice(0, 7) ? 'vencida, entra já' : monthLabel(px)}`); }
+        else if (freqs.has(f)) l.proximas.push(`${FREQ[f]}: sem data, entra já`);
+      });
       vistos[key(l.nome)] = (vistos[key(l.nome)] || 0) + 1;
       l.existe = existentes.has(key(l.nome));
     });
@@ -81,8 +103,8 @@ export async function render(el) {
       <div class="card-head"><h2 class="card-title">Conferência · ${esc(unitName(uid))}</h2>
         <button type="button" class="btn btn-primary" data-go ${ok.length ? '' : 'disabled'}>${icon('upload', 18)}Importar ${ok.length} item(ns)</button></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><span class="pill p-ok">${ok.length} prontos</span><span class="pill p-info">${planos} planos de preventiva</span>${exist.length ? `<span class="pill p-gray">${exist.length} já existem (ignorados)</span>` : ''}${ruins.length ? `<span class="pill p-bad">${ruins.length} com pendência</span>` : ''}</div>
-      <div class="table-wrap"><table class="tbl"><thead><tr><th>Linha</th><th>Equipamento</th><th>Área › Setor</th><th>Tipo</th><th>Categoria</th><th>Situação</th></tr></thead><tbody>
-        ${linhas.map(l => `<tr><td class="muted">${l.n}</td><td class="t">${esc(l.nome)}</td><td>${esc(l.area)} › ${esc(l.setor)}</td><td>${esc(l.tipo)}</td><td>${esc(l.categoria)}</td>
+      <div class="table-wrap"><table class="tbl"><thead><tr><th>Linha</th><th>Equipamento</th><th>Área › Setor</th><th>Tipo</th><th>Categoria</th><th>Próximas (longas)</th><th>Situação</th></tr></thead><tbody>
+        ${linhas.map(l => `<tr><td class="muted">${l.n}</td><td class="t">${esc(l.nome)}</td><td>${esc(l.area)} › ${esc(l.setor)}</td><td>${esc(l.tipo)}</td><td>${esc(l.categoria)}</td><td class="small">${esc(l.proximas.join(' · ') || '—')}</td>
           <td>${l.erros.length ? `<span class="pill p-bad">Falta: ${esc(l.erros.join(', '))}</span>` : l.existe ? '<span class="pill p-gray">Já existe</span>' : '<span class="pill p-ok">OK</span>'}</td></tr>`).join('')}
       </tbody></table></div>
       <div data-log class="small"></div>
@@ -123,7 +145,7 @@ export async function render(el) {
             const area = areasUn().find(a => key(a.nome) === key(l.area)), setor = setUn().find(s => key(s.nome) === key(l.setor));
             const tipo = [...tiposBiblioteca(), ...TIPOS_SEM_PREVENTIVA].find(t => key(t) === key(l.tipo));
             const cat = S.base.categorias.find(c => c.unidade_id === uid && key(c.nome) === key(l.categoria));
-            const novo = await criarEquipamento(uid, { nome: l.nome, area_id: area.id, setor_id: setor.id, tipo_equipamento: tipo, categoria: cat?.nome || l.categoria, fabricante_texto: l.fabricante || null, numero: l.serie || null, observacoes: [l.modelo ? 'Modelo: ' + l.modelo : '', l.obs].filter(Boolean).join(' | ') || null });
+            const novo = await criarEquipamento(uid, { nome: l.nome, area_id: area.id, setor_id: setor.id, tipo_equipamento: tipo, categoria: cat?.nome || l.categoria, fabricante_texto: l.fabricante || null, numero: l.serie || null, observacoes: [l.modelo ? 'Modelo: ' + l.modelo : '', l.obs].filter(Boolean).join(' | ') || null }, { ultimas: l.ultimas });
             planos += novo.planos;
             await gravarFaixas(novo, tipo, l);
             feitos++;

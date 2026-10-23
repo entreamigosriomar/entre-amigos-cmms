@@ -39,7 +39,9 @@ Todos só acrescentam tabelas, colunas e funções; nenhum dado é apagado. Cada
 
 1. Diretoria preenche `Cadastro_Equipamentos_RioMar_Recife.xlsx` (gerada por `ferramentas/gerar_planilha_cadastro.py`).
 2. Tela **Importar planilha**: cria áreas, setores e categorias que faltarem, os equipamentos (com TAG), os planos de preventiva pelo Tipo e as faixas.
-3. Preventivas do mês são geradas sozinhas ao abrir o sistema (e há o botão “Gerar preventivas do mês”).
+3. Preventivas trimestrais, semestrais e anuais: as colunas **Última trimestral / semestral / anual** recebem a data da última vez feita; a planilha mostra a **próxima estimada** e o sistema começa o ciclo nesse mês. Em branco (ou já vencida), a preventiva entra no mês atual.
+4. Preventivas do mês são geradas sozinhas ao abrir o sistema (e há o botão “Gerar preventivas do mês”).
+5. Cada plano guarda a **última vez feita** (atualizada sozinha ao concluir a preventiva) e mostra a **próxima** na ficha do equipamento; a diretoria pode corrigir a data em Planos › Editar.
 
 ## Usuários
 

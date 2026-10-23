@@ -8,6 +8,7 @@ Roda o app num Chromium real contra uma **réplica local** do banco de produçã
 - `t1_diretor.js` — importa a planilha, abre equipamentos, gera preventivas, biblioteca, cadastros, painel.
 - `t2_fluxo.js` — líder abre 2 chamados; técnico executa checklist com NC (fritadeira) e com medição fora da faixa (câmara, terceirizada); técnico conclui o chamado; líder confirma; gerente valida a terceirizada.
 - `t3_mobile_dir.js` — telas da diretoria no celular.
+- `t4_ultima.js` — informa a última vez feita de uma preventiva semestral e confere a próxima estimada.
 
 Usuários de teste (senha `teste123`): walter@teste.com (DIRETOR), gerente@teste.com, tecnico@teste.com, lider@teste.com.
 Dependências: PostgreSQL 16, PostgREST 12, Node 22, `npm i @supabase/supabase-js@2.45.4 jsonwebtoken@9 playwright@1.47.2 xlsx@0.18.5`.

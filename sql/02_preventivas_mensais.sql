@@ -117,7 +117,8 @@ alter table public.preventivas_planos
   add column if not exists dia_semana      smallint,
   add column if not exists data_inicio     date     not null default ((now() at time zone 'America/Recife')::date),
   add column if not exists responsavel_id  uuid references public.perfis(id) on delete set null,
-  add column if not exists custo_estimado  numeric(12,2) not null default 0;
+  add column if not exists custo_estimado  numeric(12,2) not null default 0,
+  add column if not exists ultima_execucao date;  -- última vez feita (informada no cadastro ou da última preventiva concluída)
 
 alter table public.preventivas_planos
   drop constraint if exists preventivas_planos_frequencia_chk,
@@ -273,6 +274,29 @@ $$;
 drop trigger if exists trg_preventiva_validacao on public.preventivas_agendamentos;
 create trigger trg_preventiva_validacao before update on public.preventivas_agendamentos
   for each row execute function public.trg_preventiva_validacao();
+
+-- Ao concluir uma preventiva, o plano guarda a data como "última vez feita".
+create or replace function public.trg_plano_ultima_execucao()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.plano_id is not null and new.status = 'CONCLUIDA'
+     and old.status is distinct from 'CONCLUIDA' then
+    update preventivas_planos
+       set ultima_execucao = greatest(coalesce(ultima_execucao, '1900-01-01'::date),
+                                      coalesce((new.executado_em at time zone 'America/Recife')::date, new.data_programada))
+     where id = new.plano_id;
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function public.trg_plano_ultima_execucao() from anon, public;
+drop trigger if exists trg_plano_ultima_execucao on public.preventivas_agendamentos;
+create trigger trg_plano_ultima_execucao after update on public.preventivas_agendamentos
+  for each row execute function public.trg_plano_ultima_execucao();
 
 -- ---------------------------------------------------------------------
 -- 7. Situação calculada

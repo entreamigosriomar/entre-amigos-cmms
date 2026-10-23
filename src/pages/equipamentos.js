@@ -5,6 +5,7 @@ import { esc, icon, toast, errMsg, busy, openModal, modalHead, closeModal, today
 import { agendamentosEquip } from '../core/data.js';
 import { openOS, statusPill } from '../core/os.js';
 import { refresh } from '../core/nav.js';
+import { inicioPelaUltima, proximaPelaUltima, proximaDoPlano, FREQ_LONGAS } from '../core/agenda.js';
 
 const EQ_STATUS = { OPERACIONAL: ['Operacional', 'p-ok'], EM_MANUTENCAO: ['Em manutenção', 'p-orange'], PARADO: ['Parado', 'p-bad'], AGUARDANDO_PECA: ['Aguardando peça', 'p-warn'], INATIVO: ['Inativo', 'p-gray'] };
 
@@ -131,7 +132,8 @@ export async function criarEquipamento(uid, v, opts = {}) {
     const rows = rs.map(r => ({
       unidade_id: uid, equipamento_id: novo.id, rotina_id: r.id, nome: `${r.codigo} — ${r.nome}`, frequencia: r.frequencia,
       dia_previsto: opts.dia_previsto || 10, dia_semana: ['SEMANAL', 'QUINZENAL'].includes(r.frequencia) ? (opts.dia_semana ?? 1) : null,
-      data_inicio: opts.data_inicio || hoje, tipo_execucao: r.executor, empresa_padrao: null, ativo: true
+      data_inicio: opts.ultimas?.[r.frequencia] ? inicioPelaUltima(opts.ultimas[r.frequencia], r.frequencia, hoje) : (opts.data_inicio || hoje),
+      ultima_execucao: opts.ultimas?.[r.frequencia] || null, tipo_execucao: r.executor, empresa_padrao: null, ativo: true
     }));
     const p = await sb.from('preventivas_planos').insert(rows);
     if (p.error) throw new Error('Equipamento criado, mas os planos falharam: ' + errMsg(p.error));
@@ -175,7 +177,7 @@ async function ficha(id) {
         ${e.observacoes ? `<dt>Observações</dt><dd style="font-weight:400">${esc(e.observacoes)}</dd>` : ''}
       </dl>
       ${isGestao() ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end"><label class="field">Mudar situação<select class="select" data-st>${Object.entries(EQ_STATUS).filter(([k]) => k !== 'INATIVO').map(([k, v]) => `<option value="${k}" ${e.status === k ? 'selected' : ''}>${v[0]}</option>`).join('')}</select></label><button type="button" class="btn btn-light" data-salvar-st>Salvar situação</button>${isDiretoria() ? `<button type="button" class="btn btn-light" data-editar>${icon('editar', 16)}Editar cadastro</button>` : ''}</div>` : ''}`,
-    planos: () => `${planos.filter(p => p.ativo).length ? `<div class="rows">${planos.filter(p => p.ativo).map(p => { const r = rotina(p.rotina_id); return `<div class="row" style="grid-template-columns:110px minmax(0,1fr) auto"><span class="code">${esc(r?.codigo || '—')}</span><div><div class="t">${esc(r?.nome || p.nome)}</div><div class="d">${FREQ[p.frequencia] || p.frequencia} · ${['SEMANAL', 'QUINZENAL'].includes(p.frequencia) ? DIAS_SEMANA[p.dia_semana ?? 1] : 'dia ' + p.dia_previsto} · ${EXEC[p.tipo_execucao]}${p.empresa_padrao ? ' (' + esc(p.empresa_padrao) + ')' : ''}${p.responsavel_id ? ' · resp. ' + esc(personName(p.responsavel_id)) : ''}</div></div>${isDiretoria() ? `<button type="button" class="btn btn-light btn-sm" data-plano="${p.id}">Editar</button>` : ''}</div>`; }).join('')}</div>` : '<div class="empty">Nenhum plano de preventiva.</div>'}
+    planos: () => `${planos.filter(p => p.ativo).length ? `<div class="rows">${planos.filter(p => p.ativo).map(p => { const r = rotina(p.rotina_id); return `<div class="row" style="grid-template-columns:110px minmax(0,1fr) auto"><span class="code">${esc(r?.codigo || '—')}</span><div><div class="t">${esc(r?.nome || p.nome)}</div><div class="d">${FREQ[p.frequencia] || p.frequencia} · ${['SEMANAL', 'QUINZENAL'].includes(p.frequencia) ? DIAS_SEMANA[p.dia_semana ?? 1] : 'dia ' + p.dia_previsto} · ${EXEC[p.tipo_execucao]}${p.empresa_padrao ? ' (' + esc(p.empresa_padrao) + ')' : ''}${p.responsavel_id ? ' · resp. ' + esc(personName(p.responsavel_id)) : ''}</div><div class="d">Última: <b>${p.ultima_execucao ? brDateFull(p.ultima_execucao) : 'não informada'}</b> · Próxima: <b>${(x => x ? brDateFull(x) : '—')(proximaDoPlano(p, ags, hoje))}</b></div></div>${isDiretoria() ? `<button type="button" class="btn btn-light btn-sm" data-plano="${p.id}">Editar</button>` : ''}</div>`; }).join('')}</div>` : '<div class="empty">Nenhum plano de preventiva.</div>'}
       ${isDiretoria() ? `<div><button type="button" class="btn btn-light" data-addplano>${icon('mais', 16)}Adicionar rotina</button></div>` : ''}`,
     faixas: () => { const its = itensFaixa(); return its.length ? `<p class="small muted" style="margin:0">Faixas do fabricante, alinhadas com a nutrição. Valem para as próximas preventivas geradas.</p>
       <div class="rows">${its.map(i => { const fx = faixas.find(x => x.item_id === i.id); return `<div class="row" style="grid-template-columns:minmax(0,1fr) 110px 110px"><div><div class="t">${esc(i.texto)}</div><div class="d"><span class="code">${esc(i.codigo)}</span> · ${esc(i.unidade_medida || '')}</div></div>
@@ -232,7 +234,9 @@ function planoForm(e, p, existentes = []) {
       <label class="field">Frequência<select class="select" name="frequencia">${Object.entries(FREQ).map(([k, v]) => `<option value="${k}" ${(p?.frequencia || r0?.frequencia) === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
       <label class="field" data-dm>Dia previsto no mês<input class="input" type="number" min="1" max="31" name="dia" value="${p?.dia_previsto || 10}"></label>
       <label class="field" data-ds>Dia da semana<select class="select" name="semana">${DIAS_SEMANA.map((d, i) => `<option value="${i}" ${(p?.dia_semana ?? 1) === i ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
+      <label class="field">Última vez feita<input class="input" type="date" name="ultima" max="${todayISO()}" value="${p?.ultima_execucao || ''}"></label>
       <label class="field">Começa em<input class="input" type="date" name="inicio" value="${p?.data_inicio || todayISO()}"></label>
+      <p class="small muted full" data-prox style="margin:0"></p>
       <label class="field">Executor<select class="select" name="exec">${Object.entries(EXEC).map(([k, v]) => `<option value="${k}" ${(p?.tipo_execucao || r0?.executor) === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
       <label class="field">Empresa (terceirizada)<input class="input" name="empresa" value="${esc(p?.empresa_padrao || '')}"></label>
       <label class="field">Responsável<select class="select" name="resp"><option value="">Equipe da unidade</option>${tecnicos.map(t => `<option value="${t.id}" ${p?.responsavel_id === t.id ? 'selected' : ''}>${esc(t.nome)}</option>`).join('')}</select></label>
@@ -242,8 +246,15 @@ function planoForm(e, p, existentes = []) {
     <div class="modal-foot">${p ? '<button type="button" class="btn btn-danger" data-desativar>Desativar plano</button>' : ''}<button type="button" class="btn btn-light" data-close>Voltar</button><button type="button" class="btn btn-primary" data-ok>Salvar</button></div>`, { size: 'sm' });
   const F = n => m.querySelector(`[name="${n}"]`);
   const sync = () => { const sem = ['SEMANAL', 'QUINZENAL'].includes(F('frequencia').value), d = F('frequencia').value === 'DIARIA'; m.querySelector('[data-ds]').classList.toggle('hidden', !sem); m.querySelector('[data-dm]').classList.toggle('hidden', sem || d); };
-  F('frequencia').onchange = sync;
-  F('rotina').onchange = () => { const r = rotina(F('rotina').value); if (r) { F('frequencia').value = r.frequencia; F('exec').value = r.executor; sync(); } };
+  const prox = () => {
+    const u = F('ultima').value, f = F('frequencia').value, el = m.querySelector('[data-prox]');
+    const px = proximaPelaUltima(u, f);
+    el.textContent = u && px ? `Próxima estimada: ${brDateFull(px)}${px.slice(0, 7) <= todayISO().slice(0, 7) ? ' — já venceu, entra no mês atual' : ''}.` : FREQ_LONGAS.includes(f) ? 'Informe a última vez feita para o sistema calcular a próxima.' : '';
+  };
+  F('ultima').onchange = () => { if (F('ultima').value && FREQ_LONGAS.includes(F('frequencia').value)) F('inicio').value = inicioPelaUltima(F('ultima').value, F('frequencia').value); prox(); };
+  F('frequencia').onchange = () => { sync(); F('ultima').onchange(); };
+  prox();
+  F('rotina').onchange = () => { const r = rotina(F('rotina').value); if (r) { F('frequencia').value = r.frequencia; F('exec').value = r.executor; F('frequencia').onchange(); } };
   sync();
   m.querySelector('[data-desativar]')?.addEventListener('click', ev => busy(ev.currentTarget, '…', async () => {
     const r = await sb.from('preventivas_planos').update({ ativo: false }).eq('id', p.id);
@@ -255,7 +266,8 @@ function planoForm(e, p, existentes = []) {
     if (!r) { msg.textContent = 'Escolha a rotina.'; return; }
     const freq = F('frequencia').value, dia = Number(F('dia').value);
     if (!['SEMANAL', 'QUINZENAL', 'DIARIA'].includes(freq) && (dia < 1 || dia > 31)) { msg.textContent = 'Dia previsto entre 1 e 31.'; return; }
-    const v = { rotina_id: rid, nome: `${r.codigo} — ${r.nome}`, frequencia: freq, dia_previsto: dia || 10, dia_semana: ['SEMANAL', 'QUINZENAL'].includes(freq) ? Number(F('semana').value) : null, data_inicio: F('inicio').value || todayISO(), tipo_execucao: F('exec').value, empresa_padrao: F('empresa').value.trim() || null, responsavel_id: F('resp').value || null };
+    if (F('ultima').value && F('ultima').value > todayISO()) { msg.textContent = 'A última vez feita não pode ser no futuro.'; return; }
+    const v = { rotina_id: rid, nome: `${r.codigo} — ${r.nome}`, frequencia: freq, dia_previsto: dia || 10, dia_semana: ['SEMANAL', 'QUINZENAL'].includes(freq) ? Number(F('semana').value) : null, data_inicio: F('inicio').value || todayISO(), ultima_execucao: F('ultima').value || null, tipo_execucao: F('exec').value, empresa_padrao: F('empresa').value.trim() || null, responsavel_id: F('resp').value || null };
     busy(ev.currentTarget, 'Salvando…', async () => {
       const res = p ? await sb.from('preventivas_planos').update(v).eq('id', p.id) : await sb.from('preventivas_planos').insert({ ...v, unidade_id: e.unidade_id, equipamento_id: e.id, ativo: true });
       if (res.error) { msg.textContent = errMsg(res.error); return; }
