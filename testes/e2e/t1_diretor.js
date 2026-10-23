@@ -9,6 +9,12 @@ const { browser, page, login, shot, settle } = require('./lib');
     await p.setInputFiles('[data-file]', __dirname + '/teste_import.xlsx');
     await p.waitForSelector('[data-go]'); await settle(p);
     await shot(p, '02_importar_conferencia');
+    // Item não reconhecido: escolhe tipo e categoria na conferência
+    console.log('ANTES:', await p.innerText('[data-go]'));
+    await p.locator('tr', { hasText: 'algodão doce' }).locator('[data-tipo]').selectOption('Outro equipamento'); await settle(p);
+    await p.locator('tr', { hasText: 'algodão doce' }).locator('[data-cat]').selectOption('Equipamentos de cozinha'); await settle(p);
+    console.log('DEPOIS:', await p.innerText('[data-go]'));
+    await shot(p, '02b_importar_escolhido');
     await p.click('[data-go]');
     await p.waitForFunction(() => /Concluído/.test(document.querySelector('[data-log]')?.innerText || ''), null, { timeout: 30000 });
     console.log('IMPORT LOG:', await p.innerText('[data-log]'));

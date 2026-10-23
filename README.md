@@ -37,11 +37,11 @@ Todos só acrescentam tabelas, colunas e funções; nenhum dado é apagado. Cada
 
 ## Cadastro inicial
 
-1. Diretoria preenche `Cadastro_Equipamentos_RioMar_Recife.xlsx` (gerada por `ferramentas/gerar_planilha_cadastro.py`).
-2. Tela **Importar planilha**: cria áreas, setores e categorias que faltarem, os equipamentos (com TAG), os planos de preventiva pelo Tipo e as faixas.
-3. Preventivas trimestrais, semestrais e anuais: as colunas **Última trimestral / semestral / anual** recebem a data da última vez feita; a planilha mostra a **próxima estimada** e o sistema começa o ciclo nesse mês. Em branco (ou já vencida), a preventiva entra no mês atual.
-4. Preventivas do mês são geradas sozinhas ao abrir o sistema (e há o botão “Gerar preventivas do mês”).
-5. Cada plano guarda a **última vez feita** (atualizada sozinha ao concluir a preventiva) e mostra a **próxima** na ficha do equipamento; a diretoria pode corrigir a data em Planos › Editar.
+1. Preencha `Cadastro_Equipamentos_RioMar_Recife.xlsx` (gerada por `ferramentas/gerar_planilha_cadastro.py`): só **Área, Setor e nome** do equipamento; Qtd, última preventiva grande e observação são opcionais.
+2. O **Tipo** (preventivas) e a **Categoria** (chamado) são reconhecidos pelo nome (`ferramentas/reconhecimento.py` → `src/core/reconhecer.js` e aba Reconhecimento da planilha). Na tela **Importar planilha** dá para trocar o tipo/categoria de cada linha; itens não reconhecidos ficam em destaque.
+3. Faixas padrão na importação: congelados (−22 a −18 °C), resfriados (0 a 5 °C) e tensão da loja (±10%), editáveis na conferência e depois na ficha de cada equipamento.
+4. A última preventiva grande define o início das rotinas trimestrais/semestrais/anuais; em branco ou vencida, entram no mês atual. Cada plano guarda a última vez feita e mostra a próxima.
+5. Preventivas do mês são geradas sozinhas ao abrir o sistema (e há o botão “Gerar preventivas do mês”).
 
 ## Usuários
 
