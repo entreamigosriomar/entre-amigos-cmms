@@ -25,7 +25,7 @@ ok('Miniaturas e remoção de fotos',app.includes('preview-item')&&app.includes(
 ok('Revoga Object URLs',app.includes('URL.revokeObjectURL'));
 ok('Duplo envio bloqueado',app.includes('isSubmittingOpenOS')&&app.includes('if(isSubmittingOpenOS)return'));
 ok('Erro de upload preserva formulário e fotos',app.includes('Tentar novamente')&&app.includes('restoreOpenFormDraft'));
-ok('Todos status estão no filtro',app.includes('OS_STATUSES.map')&&app.includes('AGUARDANDO_TERCEIRIZADA')&&app.includes('AGUARDANDO_APROVACAO_DIRETOR')&&app.includes('CANCELADA'));
+ok('Todos status estão no filtro',app.includes('OS_STATUSES.map')&&app.includes('AGUARDANDO_TERCEIRIZADA')&&app.includes('"AGUARDANDO_APROVACAO"')&&!app.includes('AGUARDANDO_APROVACAO_DIRETOR')&&app.includes('CANCELADA'));
 ok('Cancelada não conta como aberta',app.includes('OPEN_OS_STATUSES')&&app.includes('isOpenOS'));
 ok('Custo do mês filtra pelo período atual',app.includes('d>=monthStart')&&app.includes('getMonth()+1'));
 ok('Detalhes e equipamento inexistentes são tratados',app.includes('OS não encontrada ou removida')&&app.includes('Equipamento não encontrado ou removido'));
@@ -39,6 +39,10 @@ ok('V18 conclusão exige tempo gasto',app.includes('osTimeSpent')&&app.includes(
 ok('V18 equipamento 360 mostra preventivas, tempo parado e linha do tempo',app.includes('Preventivas:')&&app.includes('Tempo parado:')&&app.includes('Linha do tempo / histórico'));
 ok('V18 somente MASTER troca unidade',app.includes('function canSwitchUnits(){return currentProfile?.role==="MASTER"}'));
 ok('Sem chave privilegiada no frontend',![index,app,config].join('\n').includes(forbiddenToken));
+ok('V18.1 atraso de OS usa sla_limite do banco',app.includes('o.sla_limite')&&!app.includes('prazo_sla'));
+ok('V18.1 técnico consegue atualizar situação da OS',app.includes('class="btn light statusOS"')&&app.includes('technicianStatusModal(b.dataset.id)'));
+ok('V18.1 conclusão valida antes de enviar fotos',app.indexOf('Informe o tempo gasto em minutos')<app.indexOf('uploadFiles(osFiles'));
+ok('V18.1 botões de envio não usam o primeiro botão do formulário',!app.includes('e.target.querySelector("button")'));
 const failed=checks.filter(c=>!c.pass);
 for(const c of checks) console.log(`${c.pass?'PASS':'FAIL'} ${c.name}`);
 if(failed.length){console.error(`\n${failed.length} smoke checks failed.`);process.exit(1)}

@@ -2,7 +2,7 @@ import {sb, LOGO} from './config/supabase.js';
 let currentUser=null,currentProfile=null,unitId=null,currentRoute="dashboard",lastRefresh=0,availableUnits=[];
 let equipment=[],sectors=[],areas=[],categories=[],orders=[],preventives=[],profiles=[];
 let osFiles=[],prevFiles=[],openFiles=[],openFormDraft={},realtimeChannel=null,isSubmittingOpenOS=false;
-const OS_STATUSES=["ABERTA","EM_EXECUCAO","AGUARDANDO_PECA","AGUARDANDO_TERCEIRIZADA","AGUARDANDO_APROVACAO_DIRETOR","CONCLUIDA","CANCELADA"];
+const OS_STATUSES=["ABERTA","EM_EXECUCAO","AGUARDANDO_PECA","AGUARDANDO_TERCEIRIZADA","AGUARDANDO_APROVACAO","CONCLUIDA","CANCELADA"];
 const OPEN_OS_STATUSES=OS_STATUSES.filter(s=>!["CONCLUIDA","CANCELADA"].includes(s));
 
 function esc(v){return String(v??"").replace(/[&<>"']/g,s=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[s]))}
@@ -104,9 +104,9 @@ async function safeRealtimeRefresh(){
   }catch(e){console.warn(e)}
 }
 function renderLogin(){
-  document.getElementById("app").innerHTML=`<div class="login"><div class="login-box">${logo()}<span class="badge">Sistema sincronizado • Supabase</span><h1>Login</h1><p>Use o mesmo usuário nos dois celulares.</p><form id="loginForm"><label class="label">E-mail</label><input class="input" name="email" type="email" required><label class="label">Senha</label><input class="input" name="senha" type="password" required><button class="btn primary w-full mt">Entrar</button></form><p class="muted" style="font-size:13px">Os dados serão compartilhados entre iPhone, Android e computador.</p></div></div>`;
+  document.getElementById("app").innerHTML=`<div class="login"><div class="login-box">${logo()}<span class="badge">Sistema sincronizado • Supabase</span><h1>Login</h1><p>Use o mesmo usuário nos dois celulares.</p><form id="loginForm"><label class="label">E-mail</label><input class="input" name="email" type="email" required><label class="label">Senha</label><input class="input" name="senha" type="password" required><button type="submit" class="btn primary w-full mt">Entrar</button></form><p class="muted" style="font-size:13px">Os dados serão compartilhados entre iPhone, Android e computador.</p></div></div>`;
   document.getElementById("loginForm").onsubmit=async e=>{
-    e.preventDefault();const b=e.target.querySelector("button");b.disabled=true;b.textContent="Entrando...";
+    e.preventDefault();const b=e.target.querySelector("button[type=submit]");b.disabled=true;b.textContent="Entrando...";
     const {error}=await sb.auth.signInWithPassword({email:e.target.email.value.trim(),password:e.target.senha.value});
     if(error){toast(error.message);b.disabled=false;b.textContent="Entrar";return}
     location.reload();
@@ -126,7 +126,7 @@ function unitSelector(){
 }
 function renderApp(){
   const m=menu();
-  document.getElementById("app").innerHTML=`<div class="shell"><aside class="side"><div class="side-logo"><img src="${LOGO}"></div><small>V17 • Produção</small><p>${esc(currentProfile.nome)}<br><b>${esc(currentProfile.role)}</b></p>${m.map(x=>`<button data-r="${x[2]}">${x[0]} ${x[1]}</button>`).join("")}</aside><main><div class="top"><div><b>Plataforma de Manutenção Entre Amigos</b><br><small>Unidade atual: ${esc(currentUnitName())}</small></div><div>${unitSelector()} <span class="sync">● Sincronizado</span> <button id="logout" class="btn light">Sair</button></div></div><section class="content" id="content"></section></main><div class="bottom">${m.slice(0,4).map(x=>`<button data-r="${x[2]}"><div>${x[0]}</div>${x[1]}</button>`).join("")}</div></div>`;
+  document.getElementById("app").innerHTML=`<div class="shell"><aside class="side"><div class="side-logo"><img src="${LOGO}"></div><small>V18.1 • Homologação</small><p>${esc(currentProfile.nome)}<br><b>${esc(currentProfile.role)}</b></p>${m.map(x=>`<button data-r="${x[2]}">${x[0]} ${x[1]}</button>`).join("")}</aside><main><div class="top"><div><b>Plataforma de Manutenção Entre Amigos</b><br><small>Unidade atual: ${esc(currentUnitName())}</small></div><div>${unitSelector()} <span class="sync">● Sincronizado</span> <button id="logout" class="btn light">Sair</button></div></div><section class="content" id="content"></section></main><div class="bottom">${m.slice(0,4).map(x=>`<button data-r="${x[2]}"><div>${x[0]}</div>${x[1]}</button>`).join("")}</div></div>`;
   document.querySelectorAll("[data-r]").forEach(b=>b.onclick=()=>navigate(b.dataset.r));
   document.getElementById("logout").onclick=async()=>{await sb.auth.signOut();location.reload()};
   document.getElementById("unitSelector")?.addEventListener("change",async e=>{
@@ -154,7 +154,7 @@ function technicianPage(){
   const services=assigned.filter(o=>["ABERTA","EM_EXECUCAO"].includes(o.status));
   const waitingParts=assigned.filter(o=>o.status==="AGUARDANDO_PECA");
   const outsourced=assigned.filter(o=>o.status==="AGUARDANDO_TERCEIRIZADA");
-  const approval=assigned.filter(o=>o.status==="AGUARDANDO_APROVACAO_DIRETOR");
+  const approval=assigned.filter(o=>o.status==="AGUARDANDO_APROVACAO");
   const todayPrev=preventives.filter(p=>isTodayDate(p.data_programada)&&p.status!=="CONCLUIDA");
   setTimeout(()=>hydrateTechnicianCards({services,waitingParts,outsourced,approval}),0);
   return `<div class="hero"><div><h1>Serviços do Dia</h1><p>Painel operacional do técnico — ${esc(currentUnitName())}</p></div><span class="today-tag">${new Date().toLocaleDateString("pt-BR")}</span></div>
@@ -183,7 +183,7 @@ function techOrderCard(o,photo){
     <p><b>TAG:</b> ${esc(eq?.tag||"SEM TAG")} • <b>Área:</b> ${esc(areaName(o.area_id||eq?.area_id))} • <b>Setor:</b> ${esc(sectorName(o.setor_id||eq?.setor_id))}</p>
     <p><b>Prioridade:</b> <span class="pill ${priorityClass(o.prioridade)}">${esc(o.prioridade)}</span> <b>Aberta há:</b> ${timeSince(o.data_abertura)} <b>Solicitante:</b> ${esc(profileName(o.solicitante_id))}</p>
     <p>${esc(o.descricao)}</p></div>
-    <div class="tech-actions">${o.status==="ABERTA"?`<button class="btn primary startOS" data-id="${o.id}">▶ Iniciar Serviço</button>`:""}<button class="btn orange finishOS" data-id="${o.id}">Concluir</button><button class="btn light detailOS" data-id="${o.id}">Ver detalhes</button></div>
+    <div class="tech-actions">${o.status==="ABERTA"?`<button class="btn primary startOS" data-id="${o.id}">▶ Iniciar Serviço</button>`:""}${o.status!=="ABERTA"?`<button class="btn light statusOS" data-id="${o.id}">Atualizar situação</button>`:""}<button class="btn orange finishOS" data-id="${o.id}">Concluir</button><button class="btn light detailOS" data-id="${o.id}">Ver detalhes</button></div>
   </div>`;
 }
 function techPreventiveCard(p){
@@ -193,33 +193,35 @@ function techPreventiveCard(p){
 function bindTechnicianButtons(){
   document.querySelectorAll(".startOS").forEach(b=>b.onclick=()=>startOS(b.dataset.id,"tecnico"));
   document.querySelectorAll(".detailOS").forEach(b=>b.onclick=()=>detailOS(b.dataset.id));
+  document.querySelectorAll(".statusOS").forEach(b=>b.onclick=()=>technicianStatusModal(b.dataset.id));
   document.querySelectorAll(".finishOS").forEach(b=>b.onclick=()=>finishOSModal(b.dataset.id));
   document.querySelectorAll(".execPrev").forEach(b=>b.onclick=()=>executePreventive(b.dataset.id));
 }
 function technicianStatusModal(id){
   const o=orders.find(x=>x.id===id);
+  if(!o)return modal(`<div class="empty">OS não encontrada ou removida.</div>`);
   modal(`<h2>Atualizar situação da OS ${o.numero}</h2><p><b>${esc(equipmentName(o.equipamento_id))}</b></p><form id="techStatusForm">
   <label class="label">Nova situação</label><select class="input" id="newTechStatus" required>
     <option value="EM_EXECUCAO">Em execução</option><option value="AGUARDANDO_PECA">Aguardando peça</option>
     <option value="AGUARDANDO_TERCEIRIZADA">Aguardando terceirizada</option>
-    <option value="AGUARDANDO_APROVACAO_DIRETOR">Aguardando aprovação do diretor</option>
+    <option value="AGUARDANDO_APROVACAO">Aguardando aprovação do diretor</option>
     <option value="CONCLUIDA">Concluir serviço</option></select>
   <label class="label">Observação</label><textarea class="input" id="techStatusObs" placeholder="Descreva a situação ou necessidade"></textarea>
-  <button class="btn primary w-full mt">Continuar</button></form>`);
+  <button type="submit" class="btn primary w-full mt">Continuar</button></form>`);
   document.getElementById("techStatusForm").onsubmit=async e=>{
     e.preventDefault();const status=document.getElementById("newTechStatus").value,obs=document.getElementById("techStatusObs").value.trim();
     if(status==="CONCLUIDA"){closeModal();finishOSModal(id);return}
     const solution=[o.solucao,obs?`Atualização: ${obs}`:""].filter(Boolean).join("\n");
     const payload={status,solucao:solution,tecnico_id:currentUser.id};if(status==="EM_EXECUCAO"&&!o.data_inicio)payload.data_inicio=new Date().toISOString();
     const {error}=await sb.from("ordens_servico").update(payload).eq("id",id);if(error)return alert(error.message);
-    if(o.equipamento_id)await sb.from("equipamentos").update({status:status==="AGUARDANDO_PECA"?"AGUARDANDO_PECA":"EM_MANUTENCAO"}).eq("id",o.equipamento_id);
+    if(o.equipamento_id){const {error:eqErr}=await sb.from("equipamentos").update({status:status==="AGUARDANDO_PECA"?"AGUARDANDO_PECA":"EM_MANUTENCAO"}).eq("id",o.equipamento_id);if(eqErr)toast("Situação da OS salva, mas o status do equipamento não foi atualizado: "+eqErr.message)}
     await loadBase();closeModal();toast("Situação atualizada");renderPage("tecnico");
   };
 }
 function dashboard(){
   const now=new Date(),monthStart=new Date(now.getFullYear(),now.getMonth(),1),monthEnd=new Date(now.getFullYear(),now.getMonth()+1,0);
   const open=orders.filter(isOpenOS),doneMonth=orders.filter(o=>o.status==="CONCLUIDA"&&new Date(o.data_conclusao||o.atualizado_em||0)>=monthStart);
-  const overdue=open.filter(o=>{const due=o.prazo_sla||o.data_limite;return due&&new Date(due)<now});
+  const overdue=open.filter(o=>{const due=o.sla_limite;return due&&new Date(due)<now});
   const next7=preventives.filter(p=>{const d=new Date(p.data_programada+"T12:00:00");return d>=new Date(now.getFullYear(),now.getMonth(),now.getDate())&&d<=new Date(Date.now()+7*86400000)&&p.status!=="CONCLUIDA"});
   const costs=orders.filter(o=>{const d=new Date(o.data_conclusao||o.data_abertura||0);return d>=monthStart&&d<new Date(now.getFullYear(),now.getMonth()+1,1)}).reduce((s,o)=>s+Number(o.custo_material||0)+Number(o.custo_terceiro||0)+Number(o.custo_interno||0),0);
   const statusData=[
@@ -538,7 +540,7 @@ function bindOpenOS(){
     const msg=document.getElementById("openFormMsg");if(msg)msg.textContent="";
     if(!openFiles.length){if(msg)msg.textContent="Adicione pelo menos uma foto do problema.";return}
     if(!f.problema?.trim()||!f.descricao?.trim()){if(msg)msg.textContent="Preencha o problema e a descrição.";return}
-    const btn=e.submitter||e.target.querySelector("button[type=submit]")||e.target.querySelector("button");
+    const btn=e.submitter||e.target.querySelector("button[type=submit]");
     try{
       isSubmittingOpenOS=true;
       if(btn){btn.disabled=true;btn.textContent="Enviando...";}
@@ -647,24 +649,31 @@ function finishOSModal(id){
   const o=orders.find(x=>x.id===id);if(!o)return modal(`<div class="empty">OS não encontrada ou removida.</div>`);osFiles=[];
   modal(`<h2>Concluir OS</h2><p><b>${esc(equipmentName(o.equipamento_id))}</b></p><form id="finishOS"><div id="finishMsg" class="photo-help" role="status"></div>${filePicker("os")}<label class="label">Serviço executado</label><textarea id="osSolution" class="input" required></textarea><div class="formgrid"><div><label class="label">Tempo gasto (minutos)</label><input id="osTimeSpent" class="input" type="number" min="1" step="1" required></div><div><label class="label">Custo material (R$)</label><input id="osCost" class="input" type="number" min="0" step="0.01" value="0"></div><div><label class="label">Peças/material</label><input id="osParts" class="input"></div><div><label class="label">Observações</label><input id="osNotes" class="input"></div></div><button type="submit" class="btn primary w-full mt">Concluir e sincronizar</button></form>`);
   bindFilePicker("os",osFiles,null,"finishMsg");
+  let finishing=false;
   document.getElementById("finishOS").onsubmit=async e=>{
-    e.preventDefault();const msg=document.getElementById("finishMsg");if(msg)msg.textContent="";if(!osFiles.length){if(msg)msg.textContent="Adicione pelo menos uma foto usando Câmera ou Galeria.";return}
+    e.preventDefault();if(finishing)return;
+    const msg=document.getElementById("finishMsg");if(msg)msg.textContent="";
+    const btn=e.submitter||e.target.querySelector("button[type=submit]");
+    const cost=Number(document.getElementById("osCost").value||0),solution=document.getElementById("osSolution").value.trim(),parts=document.getElementById("osParts").value.trim(),notes=document.getElementById("osNotes").value.trim(),timeSpent=Number(document.getElementById("osTimeSpent").value||0);
+    if(!osFiles.length){if(msg)msg.textContent="Adicione pelo menos uma foto usando Câmera ou Galeria.";return}
+    if(!solution){if(msg)msg.textContent="Descreva o serviço executado.";return}
+    if(!timeSpent||timeSpent<1){if(msg)msg.textContent="Informe o tempo gasto em minutos.";return}
+    if(cost<0){if(msg)msg.textContent="O custo não pode ser negativo.";return}
     try{
-      const btn=e.target.querySelector("button");btn.disabled=true;btn.textContent="Enviando fotos...";
+      finishing=true;if(btn){btn.disabled=true;btn.textContent="Enviando fotos...";}
       const files=await uploadFiles(osFiles,`os-${id}`);
       for(const x of files){const {error:attachError}=await sb.from("os_anexos").insert({os_id:id,unidade_id:unitId,usuario_id:currentUser.id,tipo:"foto",origem:"conclusao",arquivo_nome:x.name,arquivo_url:x.url,mime_type:x.mime,tamanho_bytes:x.size});if(attachError)throw attachError;}
-      const cost=Number(document.getElementById("osCost").value||0),solution=document.getElementById("osSolution").value,parts=document.getElementById("osParts").value,notes=document.getElementById("osNotes").value,timeSpent=Number(document.getElementById("osTimeSpent").value||0);
-      if(!timeSpent||timeSpent<1)throw new Error("Informe o tempo gasto em minutos.");
       const finalSolution=[solution,`Tempo gasto: ${timeSpent} min`,parts?`Peças: ${parts}`:"",notes?`Observações: ${notes}`:""].filter(Boolean).join(" | ");
       const {error}=await sb.from("ordens_servico").update({status:"CONCLUIDA",solucao:finalSolution,custo_material:cost,data_conclusao:new Date().toISOString(),tecnico_id:currentUser.id}).eq("id",id);
       if(error)throw error;
-      if(cost>0){const {error:costError}=await sb.from("os_custos").insert({os_id:id,unidade_id:unitId,usuario_id:currentUser.id,tipo:"material",descricao:parts||"Material utilizado",valor:cost});if(costError)throw costError;}
+      if(cost>0){const {error:costError}=await sb.from("os_custos").insert({os_id:id,unidade_id:unitId,usuario_id:currentUser.id,tipo:"material",descricao:parts||"Material utilizado",valor:cost});if(costError)throw new Error("OS concluída, mas o custo não foi registrado: "+costError.message);}
       if(o.equipamento_id){
         const {count}=await sb.from("ordens_servico").select("id",{count:"exact",head:true}).eq("equipamento_id",o.equipamento_id).not("status","in","(CONCLUIDA,CANCELADA)").neq("id",id);
         if(!count)await sb.from("equipamentos").update({status:"OPERACIONAL"}).eq("id",o.equipamento_id);
       }
-      clearFilePicker("os",osFiles);await loadBase();closeModal();toast("OS concluída e condição do equipamento atualizada");renderPage("ordens");
-    }catch(err){if(msg)msg.textContent=err.message||String(err);else toast(err.message||String(err));const btn=e.target.querySelector("button");if(btn){btn.disabled=false;btn.textContent="Tentar novamente";}}
+      clearFilePicker("os",osFiles);await loadBase();closeModal();toast("OS concluída e condição do equipamento atualizada");renderPage(currentRoute);
+    }catch(err){if(msg)msg.textContent=err.message||String(err);else toast(err.message||String(err));if(btn){btn.disabled=false;btn.textContent="Tentar novamente";}}
+    finally{finishing=false;}
   };
 }
 function newEquipmentModal(){
@@ -713,7 +722,7 @@ function executePreventive(id){
     document.querySelectorAll(".check").forEach(w=>{const a=w.querySelector(".choice.active"),obs=w.querySelector(".obs").value.trim(),item=w.dataset.item;if(!a||(a.dataset.v==="NAO_CONFORME"&&!obs))invalid=true;responses.push({item,status:a?.dataset.v||"",observacao:obs});if(a?.dataset.v==="NAO_CONFORME")non.push({item,obs})});
     const msg=document.getElementById("prevMsg");if(msg)msg.textContent="";if(invalid){if(msg)msg.textContent="Marque todos os itens. Não conforme exige observação.";return}if(!prevFiles.length){if(msg)msg.textContent="Adicione pelo menos uma foto usando Câmera ou Galeria.";return}
     try{
-      const btn=e.submitter||e.target.querySelector("button[type=submit]")||e.target.querySelector("button");btn.disabled=true;btn.textContent="Enviando fotos...";
+      const btn=e.submitter||e.target.querySelector("button[type=submit]");btn.disabled=true;btn.textContent="Enviando fotos...";
       const files=await uploadFiles(prevFiles,`preventiva-${id}`);
       for(const x of files){const {error:attachError}=await sb.from("preventivas_anexos").insert({agendamento_id:id,unidade_id:unitId,usuario_id:currentUser.id,arquivo_nome:x.name,arquivo_url:x.url,mime_type:x.mime,tamanho_bytes:x.size});if(attachError)throw attachError;}
       for(const r of responses){const {error:respError}=await sb.from("preventivas_checklist_respostas").insert({agendamento_id:id,item:r.item,conforme:r.status==="CONFORME",observacao:r.observacao});if(respError)throw respError;}
@@ -721,7 +730,7 @@ function executePreventive(id){
       if(error)throw error;
       for(const n of non){const {error:ncError}=await sb.from("ordens_servico").insert({unidade_id:unitId,equipamento_id:p.equipamento_id,solicitante_id:currentUser.id,tipo:"PREVENTIVA",status:"ABERTA",prioridade:"ALTA",categoria:"Preventiva",problema:"Não conformidade",descricao:`Não conformidade: ${n.item}. Observação: ${n.obs}`});if(ncError)throw ncError;}
       clearFilePicker("prev",prevFiles);await loadBase();closeModal();toast("Preventiva concluída e sincronizada");renderPage("prev");
-    }catch(err){if(msg)msg.textContent=err.message||String(err);else toast(err.message||String(err));const btn=e.target.querySelector("button");if(btn){btn.disabled=false;btn.textContent="Tentar novamente";}}
+    }catch(err){if(msg)msg.textContent=err.message||String(err);else toast(err.message||String(err));const btn=e.submitter||e.target.querySelector("button[type=submit]");if(btn){btn.disabled=false;btn.textContent="Tentar novamente";}}
   };
 }
 bootstrap().catch(e=>{console.error(e);document.getElementById("app").innerHTML=`<div class="login"><div class="login-box">${logo()}<h1>Erro ao abrir</h1><p>${esc(e.message)}</p><button class="btn primary" onclick="location.reload()">Atualizar</button></div></div>`});
