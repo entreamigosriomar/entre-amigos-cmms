@@ -13,8 +13,9 @@
 --      confirmação da solução pelo líder (Resolvido / Reabrir).
 --   3. Função confirmar_chamado(): só quem abriu o chamado confirma
 --      ou reabre. Reabrir devolve a OS para ABERTA.
---   4. Perfil OPERADOR passa a ser exibido como "Líder" na tela
---      (nenhuma mudança de dados).
+--   4. Perfil OPERADOR passa a ser exibido como "Líder" na tela.
+--   5. Técnico pode mudar a situação do equipamento (função própria).
+--   6. Usuário criado no Supabase Auth ganha perfil inativo automático.
 --
 -- Rode depois do 02 e do 04.
 -- =====================================================================
@@ -117,6 +118,55 @@ end;
 $$;
 revoke execute on function public.confirmar_chamado(uuid, boolean, text) from anon, public;
 grant  execute on function public.confirmar_chamado(uuid, boolean, text) to authenticated;
+
+-- 4. Técnico pode mudar só a SITUAÇÃO do equipamento (o cadastro continua com a gestão).
+create or replace function public.atualizar_status_equipamento(p_equipamento_id uuid, p_status equipamento_status)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_unidade uuid;
+begin
+  select unidade_id into v_unidade from equipamentos where id = p_equipamento_id;
+  if v_unidade is null then
+    raise exception 'Equipamento não encontrado.';
+  end if;
+  if not public.can_access_unidade(v_unidade)
+     or coalesce(public.get_my_role()::text, '') not in ('MASTER','ADMIN','DIRETOR','GERENTE','TECNICO') then
+    raise exception 'Sem permissão para alterar a situação do equipamento.';
+  end if;
+  if p_status = 'INATIVO' and not public.is_gestao() then
+    raise exception 'Só a gestão inativa equipamentos.';
+  end if;
+  update equipamentos set status = p_status where id = p_equipamento_id;
+end;
+$$;
+revoke execute on function public.atualizar_status_equipamento(uuid, equipamento_status) from anon, public;
+grant  execute on function public.atualizar_status_equipamento(uuid, equipamento_status) to authenticated;
+
+-- 5. Usuário novo criado no Supabase Auth ganha um perfil INATIVO automaticamente.
+--    A diretoria (MASTER/ADMIN) define perfil, unidade e ativa pela tela Usuários.
+create or replace function public.criar_perfil_novo_usuario()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.perfis (id, nome, email, role, unidade_id, ativo)
+  values (new.id,
+          coalesce(nullif(new.raw_user_meta_data->>'nome', ''), split_part(new.email, '@', 1)),
+          new.email, 'OPERADOR', null, false)
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+drop trigger if exists ea_criar_perfil_novo_usuario on auth.users;
+create trigger ea_criar_perfil_novo_usuario
+  after insert on auth.users
+  for each row execute function public.criar_perfil_novo_usuario();
 
 commit;
 

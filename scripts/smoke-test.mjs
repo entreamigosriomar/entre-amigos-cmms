@@ -1,49 +1,44 @@
+// Verificações estáticas da V18.1 (rodar com: npm test).
+// O teste funcional completo (navegador + banco) fica em testes/e2e — ver testes/README.md.
 import fs from 'node:fs';
 import path from 'node:path';
-const root=process.cwd();
-const read=p=>fs.readFileSync(path.join(root,p),'utf8');
-const checks=[]; const ok=(name,pass)=>checks.push({name,pass});
-const files=['index.html','src/styles.css','src/app.js','src/config/supabase.js','src/state/store.js','src/router.js','src/services/authService.js','src/services/unitService.js','src/services/orderService.js','src/services/equipmentService.js','src/services/preventiveService.js','src/services/catalogService.js','src/services/uploadService.js','src/domain/permissions.js','src/domain/statuses.js','src/domain/priorities.js','src/ui/modal.js','src/ui/toast.js','src/ui/filePicker.js','src/pages/loginPage.js','src/pages/dashboardPage.js','src/pages/technicianPage.js','src/pages/ordersPage.js','src/pages/openOrderPage.js','src/pages/equipmentPage.js','src/pages/preventivePage.js','src/pages/catalogsPage.js','src/pages/auditPage.js','src/pages/costsPage.js','src/pages/usersPage.js','src/pages/reportsPage.js','src/pages/configPage.js'];
-for(const f of files) ok(`arquivo existe: ${f}`,fs.existsSync(path.join(root,f)));
-const index=read('index.html'),app=read('src/app.js'),config=read('src/config/supabase.js');
-ok('GitHub Pages carrega app modular',index.includes('type="module"')&&index.includes('./src/app.js')&&index.includes('./src/styles.css'));
-ok('Login usa Supabase Auth',app.includes('sb.auth.getSession')&&app.includes('signInWithPassword'));
-ok('Perfil é carregado antes da base',app.includes('await loadProfile();')&&app.includes('await loadBase();'));
-ok('Seleção de unidade existe para perfis privilegiados',app.includes('id="unitSelector"')&&app.includes('canSwitchUnits()'));
-ok('Troca de unidade recarrega base e recria realtime',app.includes('await loadBase(e.target.value);startSync();renderApp()'));
-ok('Realtime cancela subscription antiga',app.includes('sb.removeChannel(realtimeChannel)'));
-ok('Não há polling setInterval',!app.includes('setInterval('));
-ok('Não usa localStorage para dado oficial',!app.includes('localStorage'));
-ok('Técnico não recebe item Cadastros',app.includes('if(isTechnician())')&&app.includes('if(canManageCatalog()) items.splice'));
-ok('Abertura de OS tem unidade/área/setor/categoria/equipamento/prioridade/problema/descrição',app.includes('name="area_id"')&&app.includes('name="setor_id"')&&app.includes('name="categoria"')&&app.includes('name="equipamento_id"')&&app.includes('name="prioridade"')&&app.includes('name="problema"')&&app.includes('name="descricao"'));
-ok('Abertura sem foto bloqueia com mensagem visual',app.includes('openFormMsg')&&app.includes('Adicione pelo menos uma foto do problema'));
-ok('Abertura com foto cria OS, faz upload e grava anexos',app.includes('ordens_servico')&&app.includes('uploadFiles(openFiles')&&app.includes('os_anexos'));
-ok('Preserva campos após foto',app.includes('saveOpenFormDraft')&&app.includes('restoreOpenFormDraft')&&app.includes('onBeforePick?.()'));
-ok('Limita várias fotos a 8 e 10 MB',app.includes('PHOTO_LIMIT=8')&&app.includes('PHOTO_MAX_BYTES=10*1024*1024'));
-ok('Câmera e galeria separadas',app.includes('capture="environment"')&&app.includes('Gallery')&&app.includes('multiple'));
-ok('Miniaturas e remoção de fotos',app.includes('preview-item')&&app.includes('preview-remove')&&app.includes('target.splice(i,1)'));
-ok('Revoga Object URLs',app.includes('URL.revokeObjectURL'));
-ok('Duplo envio bloqueado',app.includes('isSubmittingOpenOS')&&app.includes('if(isSubmittingOpenOS)return'));
-ok('Erro de upload preserva formulário e fotos',app.includes('Tentar novamente')&&app.includes('restoreOpenFormDraft'));
-ok('Todos status estão no filtro',app.includes('OS_STATUSES.map')&&app.includes('AGUARDANDO_TERCEIRIZADA')&&app.includes('"AGUARDANDO_APROVACAO"')&&!app.includes('AGUARDANDO_APROVACAO_DIRETOR')&&app.includes('CANCELADA'));
-ok('Cancelada não conta como aberta',app.includes('OPEN_OS_STATUSES')&&app.includes('isOpenOS'));
-ok('Custo do mês filtra pelo período atual',app.includes('d>=monthStart')&&app.includes('getMonth()+1'));
-ok('Detalhes e equipamento inexistentes são tratados',app.includes('OS não encontrada ou removida')&&app.includes('Equipamento não encontrado ou removido'));
-ok('Anexos e checklist checam erros',app.includes('attachError')&&app.includes('respError')&&app.includes('ncError'));
-const forbiddenToken='service'+'_role';
+import { execSync } from 'node:child_process';
 
-ok('V18 painel técnico mostra filas operacionais',app.includes('OS Aguardando Peça')&&app.includes('OS Terceirizadas')&&app.includes('OS Aguardando Aprovação'));
-ok('V18 técnico vê cartões com TAG, área, setor, tempo e solicitante',app.includes('Aberta há:')&&app.includes('Solicitante:')&&app.includes('TAG:'));
-ok('V18 iniciar serviço muda para EM_EXECUCAO',app.includes('async function startOS')&&app.includes('status:"EM_EXECUCAO"'));
-ok('V18 conclusão exige tempo gasto',app.includes('osTimeSpent')&&app.includes('Informe o tempo gasto em minutos'));
-ok('V18 equipamento 360 mostra preventivas, tempo parado e linha do tempo',app.includes('Preventivas:')&&app.includes('Tempo parado:')&&app.includes('Linha do tempo / histórico'));
-ok('V18 somente MASTER troca unidade',app.includes('function canSwitchUnits(){return currentProfile?.role==="MASTER"}'));
-ok('Sem chave privilegiada no frontend',![index,app,config].join('\n').includes(forbiddenToken));
-ok('V18.1 atraso de OS usa sla_limite do banco',app.includes('o.sla_limite')&&!app.includes('prazo_sla'));
-ok('V18.1 técnico consegue atualizar situação da OS',app.includes('class="btn light statusOS"')&&app.includes('technicianStatusModal(b.dataset.id)'));
-ok('V18.1 conclusão valida antes de enviar fotos',app.indexOf('Informe o tempo gasto em minutos')<app.indexOf('uploadFiles(osFiles'));
-ok('V18.1 botões de envio não usam o primeiro botão do formulário',!app.includes('e.target.querySelector("button")'));
-const failed=checks.filter(c=>!c.pass);
-for(const c of checks) console.log(`${c.pass?'PASS':'FAIL'} ${c.name}`);
-if(failed.length){console.error(`\n${failed.length} smoke checks failed.`);process.exit(1)}
-console.log(`\n${checks.length} smoke checks passed.`);
+const root = process.cwd();
+const read = p => fs.readFileSync(path.join(root, p), 'utf8');
+const checks = [];
+const ok = (name, pass) => checks.push({ name, pass: !!pass });
+
+const pages = ['login', 'painel', 'controle', 'ordens', 'equipamentos', 'biblioteca', 'cadastros', 'importar', 'usuarios', 'meudia', 'checklist', 'chamados', 'abrir'];
+const core = ['util', 'state', 'data', 'photos', 'os', 'nav'];
+const files = ['index.html', 'src/styles.css', 'src/app.js', 'src/config/supabase.js', ...core.map(c => `src/core/${c}.js`), ...pages.map(p => `src/pages/${p}.js`)];
+for (const f of files) ok(`arquivo existe: ${f}`, fs.existsSync(path.join(root, f)));
+
+const all = files.filter(f => f.endsWith('.js')).map(read).join('\n');
+const index = read('index.html');
+for (const f of files.filter(f => f.endsWith('.js'))) {
+  try { execSync(`node --experimental-default-type=module --check ${f}`, { stdio: 'pipe' }); ok(`sintaxe ok: ${f}`, true); }
+  catch (e) { ok(`sintaxe ok: ${f} — ${String(e.stderr).split('\n')[0]}`, false); }
+}
+for (const p of pages.filter(p => p !== 'login')) ok(`página ${p} exporta render()`, /export async function render\(/.test(read(`src/pages/${p}.js`)));
+ok('supabase-js com versão fixa', /supabase-js@2\.\d+\.\d+/.test(index));
+ok('leitor de planilha com versão fixa', /xlsx@0\.18\.5/.test(read('src/pages/importar.js')));
+ok('fotos não usam link público', !all.includes('getPublicUrl'));
+ok('fotos abrem por link temporário', all.includes('createSignedUrls'));
+ok('sem chave privilegiada no frontend', !(all + index).includes('service' + '_role'));
+ok('status de aprovação igual ao do banco', !all.includes('AGUARDANDO_APROVACAO_DIRETOR') && all.includes("'AGUARDANDO_APROVACAO'"));
+ok('atraso de OS usa sla_limite', all.includes('sla_limite') && !all.includes('prazo_sla'));
+ok('chamado tem origem CHAMADO e urgência', read('src/pages/abrir.js').includes("origem: 'CHAMADO'") && read('src/pages/abrir.js').includes('urgencia'));
+ok('chamado filtra item por setor e categoria', read('src/pages/abrir.js').includes('e.setor_id === st.setor') && read('src/pages/abrir.js').includes('st.categoria'));
+ok('líder confirma pela função confirmar_chamado', read('src/pages/chamados.js').includes("rpc('confirmar_chamado'"));
+ok('NC do checklist exige descrição e foto', read('src/pages/checklist.js').includes('Não conformidade exige descrição e foto'));
+ok('medição fora da faixa vira NC', read('src/pages/checklist.js').includes('foraDaFaixa'));
+ok('técnico muda situação do equipamento por função', read('src/core/data.js').includes("rpc('atualizar_status_equipamento'"));
+ok('geração automática do mês', read('src/core/state.js').includes("rpc('gerar_preventivas_mes'"));
+ok('localStorage só com try/catch', !/localStorage\.(get|set|remove)Item/.test(all.replace(/try \{[^}]*localStorage[^}]*\}/g, '')));
+for (const s of ['01_fechar_views', '02_preventivas_mensais', '03_fotos_privadas', '04_carga_biblioteca', '05_chamados_e_locais']) ok(`SQL ${s} presente`, fs.existsSync(path.join(root, `sql/${s}.sql`)));
+
+const failed = checks.filter(c => !c.pass);
+for (const c of checks) console.log(`${c.pass ? 'PASS' : 'FAIL'} ${c.name}`);
+if (failed.length) { console.error(`\n${failed.length} verificação(ões) falharam.`); process.exit(1); }
+console.log(`\n${checks.length} verificações passaram.`);
