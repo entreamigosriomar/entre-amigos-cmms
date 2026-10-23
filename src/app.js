@@ -301,7 +301,9 @@ async function getOpeningPhotos(orderIds){
   if(!orderIds.length)return {};
   const {data,error}=await sb.from("os_anexos").select("os_id,arquivo_url").in("os_id",orderIds).eq("origem","abertura").order("criado_em",{ascending:true});
   if(error){console.warn(error);return {}}
-  const map={};(data||[]).forEach(a=>{if(!map[a.os_id])map[a.os_id]=a.arquivo_url});return map;
+  const first={};(data||[]).forEach(a=>{if(!first[a.os_id])first[a.os_id]=a.arquivo_url});
+  const signed=await signedUrlMap(Object.values(first));
+  const map={};Object.entries(first).forEach(([id,v])=>{if(signed[v])map[id]=signed[v]});return map;
 }
 function ordersFiltered(){
   const q=(document.getElementById("qOS")?.value||"").toLowerCase(),s=document.getElementById("sOS")?.value||"",p=document.getElementById("pOS")?.value||"";
@@ -585,7 +587,8 @@ async function detailOS(id){
   if(!o)return modal(`<div class="empty">OS não encontrada ou removida.</div>`);
   const {data:anexos,error}=await sb.from("os_anexos").select("*").eq("os_id",id).order("criado_em",{ascending:false});
   if(error)return modal(`<div class="empty">Erro ao carregar anexos: ${esc(error.message)}</div>`);
-  modal(`<h2>OS Nº ${esc(o.numero)}</h2><p><b>Equipamento:</b> ${esc(equipmentName(o.equipamento_id))}</p><p><b>Status:</b> ${o.status}</p><p><b>Descrição:</b> ${esc(o.descricao)}</p><p><b>Solução:</b> ${esc(o.solucao||"Ainda não concluída")}</p><p><b>Fotos:</b> ${(anexos||[]).length}</p>${(anexos||[]).map(a=>`<a href="${a.arquivo_url}" target="_blank">Abrir ${esc(a.arquivo_nome||"foto")}</a><br>`).join("")}`);
+  const signed=await signedUrlMap((anexos||[]).map(a=>a.arquivo_url));
+  modal(`<h2>OS Nº ${esc(o.numero)}</h2><p><b>Equipamento:</b> ${esc(equipmentName(o.equipamento_id))}</p><p><b>Status:</b> ${o.status}</p><p><b>Descrição:</b> ${esc(o.descricao)}</p><p><b>Solução:</b> ${esc(o.solucao||"Ainda não concluída")}</p><p><b>Fotos:</b> ${(anexos||[]).length}</p><div class="preview">${(anexos||[]).map(a=>signed[a.arquivo_url]?`<a class="preview-item" href="${esc(signed[a.arquivo_url])}" target="_blank" rel="noopener"><img src="${esc(signed[a.arquivo_url])}" alt="${esc(a.arquivo_nome||"foto")}"></a>`:`<span class="muted">Foto indisponível</span>`).join("")}</div>`);
 }
 function modal(content){document.getElementById("modalRoot").innerHTML=`<div class="modal-bg"><div class="modal"><div class="modal-head"><span></span><button class="btn light" onclick="closeModal()">X</button></div>${content}</div></div>`}
 const PHOTO_LIMIT=8,PHOTO_MAX_BYTES=10*1024*1024,previewUrls={};
@@ -633,6 +636,24 @@ function bindFilePicker(prefix,target,onBeforePick,msgId){
   renderPreview();
 }
 function clearFilePicker(prefix,target){(previewUrls[prefix]||[]).forEach(URL.revokeObjectURL);previewUrls[prefix]=[];target.length=0;}
+// Fotos ficam em bucket privado: o banco guarda o caminho e a tela pede um link temporário.
+// Também entende os links públicos antigos (gravados pela V16.1/V18).
+function storagePath(value){
+  if(!value)return null;
+  const m=String(value).match(/\/object\/(?:public|sign|authenticated)\/os-anexos\/([^?]+)/);
+  if(m)return decodeURIComponent(m[1]);
+  return /^https?:/i.test(value)?null:String(value);
+}
+async function signedUrlMap(values){
+  const map={},paths=[...new Set(values.map(storagePath).filter(Boolean))];
+  values.forEach(v=>{if(v&&!storagePath(v))map[v]=v});
+  if(!paths.length)return map;
+  const {data,error}=await sb.storage.from("os-anexos").createSignedUrls(paths,3600);
+  if(error){console.warn(error);return map}
+  const byPath={};(data||[]).forEach(x=>{if(x.signedUrl)byPath[x.path]=x.signedUrl});
+  values.forEach(v=>{const p=storagePath(v);if(p&&byPath[p])map[v]=byPath[p]});
+  return map;
+}
 async function uploadFiles(files,folder){
   const urls=[];
   for(const f of files){
@@ -641,7 +662,7 @@ async function uploadFiles(files,folder){
     const ext=(f.name.split(".").pop()||"jpg").toLowerCase(),path=`${unitId}/${folder}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
     const {error}=await sb.storage.from("os-anexos").upload(path,f,{contentType:f.type,upsert:false});
     if(error)throw error;
-    const {data}=sb.storage.from("os-anexos").getPublicUrl(path);urls.push({url:data.publicUrl,name:f.name,mime:f.type,size:f.size});
+    urls.push({url:path,name:f.name,mime:f.type,size:f.size});
   }
   return urls;
 }
