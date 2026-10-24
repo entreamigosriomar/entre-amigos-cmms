@@ -1,7 +1,8 @@
 // Controle mensal de preventivas: previsto × executado, linha do mês, tabela com ações.
 import { sb } from '../config/supabase.js';
-import { S, SITUACAO, EXEC, situacao, isDone, eq, eqName, codigoAg, resumoAg, personName, unitName, currentUnitName, isGestao, canExecute, unitIds, checklistItens, CRIT } from '../core/state.js';
-import { esc, icon, todayISO, monthStart, monthEnd, shiftMonth, monthLabel, brDate, brDateFull, brDateTime, toast, errMsg, busy, openModal, modalHead, closeModal, money, num, pct } from '../core/util.js';
+import { S, SITUACAO, EXEC, situacao, isDone, eq, eqName, codigoAg, resumoAg, personName, unitName, currentUnitName, isGestao, isDiretoria, canExecute, unitIds, checklistItens, CRIT } from '../core/state.js';
+import { distribuirPlanos } from '../core/distribuir.js';
+import { esc, icon, todayISO, monthStart, monthEnd, shiftMonth, monthLabel, brDate, brDateFull, brDateTime, toast, errMsg, busy, openModal, modalHead, closeModal, money, num, pct, confirmDialog } from '../core/util.js';
 import { agendamentosMes, atualizarAgendamento } from '../core/data.js';
 import { galleryHTML } from '../core/photos.js';
 import { go, refresh } from '../core/nav.js';
@@ -9,8 +10,13 @@ import { go, refresh } from '../core/nav.js';
 export async function render(el, params) {
   const mes = params.mes || monthStart(todayISO());
   const hoje = todayISO();
-  const ags = await agendamentosMes(mes);
-  const f = { sit: params.sit || '', exec: '', q: '' };
+  const desde = shiftMonth(mes, -5);
+  const [ags, hist] = await Promise.all([
+    agendamentosMes(mes),
+    sb.from('preventivas_agendamentos').select('data_programada,status,tipo_execucao,executado_em').in('unidade_id', unitIds())
+      .gte('data_programada', desde).lte('data_programada', monthEnd(mes)).then(r => r.data || [])
+  ]);
+  const f = { sit: params.sit || '', exec: '', q: '', dia: '' };
   const sits = ags.map(a => ({ a, s: situacao(a, hoje) }));
   const validos = sits.filter(x => x.s !== 'CANCELADA');
   const feitas = validos.filter(x => isDone(x.a));
@@ -27,7 +33,7 @@ export async function render(el, params) {
 
   const lista = () => sits.filter(({ a, s }) =>
     (!f.sit || s === f.sit || (f.sit === 'TERC' && a.tipo_execucao !== 'INTERNA')) &&
-    (!f.exec || a.tipo_execucao === f.exec) &&
+    (!f.exec || a.tipo_execucao === f.exec) && (!f.dia || a.data_programada === f.dia) &&
     (!f.q || `${eqName(a.equipamento_id)} ${codigoAg(a)} ${resumoAg(a)} ${eq(a.equipamento_id)?.tag || ''}`.toLowerCase().includes(f.q.toLowerCase()))
   ).sort((x, y) => {
     const ord = { ATRASADA: 0, VALIDAR: 1, PENDENTE: 2, CONCLUIDA_NC: 3, CONCLUIDA: 4, CANCELADA: 5 };
@@ -60,15 +66,51 @@ export async function render(el, params) {
     </tbody></table></div>`;
   }
 
-  // Linha do mês
+  // Calendário do mês (segunda a domingo)
   const lastDay = Number(monthEnd(mes).slice(8));
-  const porDia = {};
-  sits.forEach(({ a, s }) => { const d = Number(a.data_programada.slice(8)); (porDia[d] = porDia[d] || []).push(SITUACAO[s][2]); });
   const isMesAtual = mes === monthStart(hoje);
-  const linha = Array.from({ length: lastDay }, (_, i) => {
-    const d = i + 1, today = isMesAtual && d === Number(hoje.slice(8));
-    return `<div class="day ${today ? 'today' : ''}"><b>${d}</b>${(porDia[d] || []).slice(0, 5).map(c => `<i style="background:${c}${today ? ';outline:2px solid #fff' : ''}"></i>`).join('')}${(porDia[d] || []).length > 5 ? `<b style="font-size:10px">+${porDia[d].length - 5}</b>` : ''}</div>`;
-  }).join('');
+  const porData = {};
+  sits.forEach(x => { (porData[x.a.data_programada] ||= []).push(x); });
+  const offset = (new Date(mes + 'T12:00:00').getDay() + 6) % 7;
+  const ORD = ['ATRASADA', 'VALIDAR', 'PENDENTE', 'CONCLUIDA_NC', 'CONCLUIDA', 'CANCELADA'];
+  const celula = d => {
+    const iso = mes.slice(0, 8) + String(d).padStart(2, '0'), l = (porData[iso] || []).filter(x => x.s !== 'CANCELADA');
+    const eqp = l.filter(x => x.a.tipo_execucao === 'INTERNA').length, ter = l.length - eqp;
+    const atr = l.filter(x => x.s === 'ATRASADA').length, ok = l.filter(x => ['CONCLUIDA', 'CONCLUIDA_NC', 'VALIDAR'].includes(x.s)).length;
+    const dom = (offset + d - 1) % 7 === 6;
+    const barra = l.length ? `<span class="cal-bar">${ORD.filter(k => k !== 'CANCELADA').map(k => { const n = l.filter(x => x.s === k).length; return n ? `<i style="flex:${n};background:${SITUACAO[k][2]}"></i>` : ''; }).join('')}</span>` : '';
+    return `<button type="button" class="cal-d${iso === hoje ? ' hoje' : ''}${dom ? ' dom' : ''}${f.dia === iso ? ' on' : ''}${l.length ? '' : ' vazio'}" data-dia="${iso}" ${l.length ? '' : 'tabindex="-1"'} aria-label="${d}: ${l.length} preventiva(s)">
+      <span class="cal-n">${d}</span>
+      ${l.length ? `<span class="cal-c">${eqp ? `<span class="cal-e" title="Equipe da loja">${icon('chave', 12)}${eqp}</span>` : ''}${ter ? `<span class="cal-t" title="Terceirizada">${icon('maleta', 12)}${ter}</span>` : ''}</span>
+        <span class="cal-s">${atr ? `<b style="color:var(--bad)">${atr} atrasada${atr > 1 ? 's' : ''}</b>` : ok === l.length ? '<b style="color:var(--ok)">feito</b>' : `${ok}/${l.length}`}</span>${barra}` : ''}
+    </button>`;
+  };
+  const calendario = `<div class="cal" role="grid">${['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'].map(d => `<span class="cal-h">${d}</span>`).join('')}${'<span></span>'.repeat(offset)}${Array.from({ length: lastDay }, (_, i) => celula(i + 1)).join('')}</div>`;
+
+  // Equipe × terceirizada (mês)
+  const grupoExec = a => a.tipo_execucao === 'INTERNA' ? 'EQ' : 'TE';
+  const exec = ['EQ', 'TE'].map(g => {
+    const l = sits.filter(x => grupoExec(x.a) === g && x.s !== 'CANCELADA');
+    const feitas = l.filter(x => isDone(x.a)), noPrazo = feitas.filter(x => String(x.a.executado_em || '').slice(0, 10) <= x.a.data_programada);
+    return { g, nome: g === 'EQ' ? 'Equipe da loja' : 'Terceirizadas', total: l.length, feitas: feitas.length, noPrazo: noPrazo.length,
+      atr: l.filter(x => x.s === 'ATRASADA').length, val: l.filter(x => x.s === 'VALIDAR').length, nc: l.filter(x => x.s === 'CONCLUIDA_NC').length };
+  });
+  const execCard = `<div class="exec-grid">${exec.map(x => { const p = x.total ? x.feitas / x.total * 100 : 0; return `<div class="exec">
+      <div class="exec-top"><span class="exec-ic ${x.g}">${icon(x.g === 'EQ' ? 'chave' : 'maleta', 18)}</span><b>${x.nome}</b><span class="exec-pct">${x.total ? pct(p) : '—'}</span></div>
+      <div class="bar"><i style="width:${p}%;background:${x.g === 'EQ' ? 'var(--orange)' : 'var(--navy)'}"></i></div>
+      <div class="exec-n"><span><b>${x.feitas}</b> de ${x.total} feitas</span><span><b>${x.feitas ? pct(x.noPrazo / x.feitas * 100) : '—'}</b> no prazo</span><span style="color:${x.atr ? 'var(--bad)' : 'inherit'}"><b>${x.atr}</b> atrasadas</span>${x.g === 'TE' ? `<span><b>${x.val}</b> a validar</span>` : `<span><b>${x.nc}</b> com NC</span>`}</div>
+    </div>`; }).join('')}</div>`;
+
+  // Últimos 6 meses
+  const meses = Array.from({ length: 6 }, (_, i) => shiftMonth(desde, i));
+  const serie = meses.map(m => { const l = hist.filter(a => a.data_programada.slice(0, 7) === m.slice(0, 7) && a.status !== 'CANCELADA');
+    const v = g => { const x = l.filter(a => grupoExec(a) === g), ok = x.filter(a => a.status === 'CONCLUIDA').length; return x.length ? { p: ok / x.length * 100, n: x.length } : null; };
+    return { m, EQ: v('EQ'), TE: v('TE') }; });
+  const temHist = serie.some(x => x.EQ || x.TE);
+  const barraMes = (v, cls) => v ? `<div class="tr-b ${cls}" style="height:${Math.max(3, v.p)}%"><span>${Math.round(v.p)}%</span></div>` : `<div class="tr-b vazio"><span>—</span></div>`;
+  const tendencia = temHist ? `<div class="trend">${serie.map(x => `<div class="tr-m${x.m === mes ? ' atual' : ''}"><div class="tr-bars">${barraMes(x.EQ, 'EQ')}${barraMes(x.TE, 'TE')}</div><span class="tr-l">${monthLabel(x.m).slice(0, 3)}/${x.m.slice(2, 4)}</span></div>`).join('')}</div>
+    <div class="small muted" style="display:flex;gap:14px;flex-wrap:wrap"><span><i class="dot" style="background:var(--orange)"></i> Equipe da loja</span><span><i class="dot" style="background:var(--navy)"></i> Terceirizadas</span><span>% concluído no mês</span></div>`
+    : '<div class="empty">O histórico aparece aqui a partir do primeiro mês com preventivas.</div>';
 
   const minis = [['', 'Previstas', validos.length, 'var(--navy)'], ['CONCLUIDA', 'Concluídas', cnt('CONCLUIDA') + cnt('VALIDAR'), 'var(--ok)'], ['CONCLUIDA_NC', 'Com NC', cnt('CONCLUIDA_NC'), 'var(--warn)'], ['ATRASADA', 'Atrasadas', cnt('ATRASADA'), 'var(--bad)'], ['PENDENTE', 'Pendentes', cnt('PENDENTE'), 'var(--info)']];
 
@@ -77,6 +119,7 @@ export async function render(el, params) {
       <div><div class="eyebrow">Preventivas · ${esc(currentUnitName())}</div><h1 class="page-title">Controle mensal</h1></div>
       <div class="head-actions">
         <div class="seg"><button type="button" data-mes="${shiftMonth(mes, -1)}" aria-label="Mês anterior">${icon('esq', 18, 2.4)}</button><span>${monthLabel(mes)}</span><button type="button" data-mes="${shiftMonth(mes, 1)}" aria-label="Próximo mês">${icon('dir', 18, 2.4)}</button></div>
+        ${isDiretoria() ? `<button type="button" class="btn btn-light" data-distribuir>${icon('painel', 18)}Distribuir no mês</button>` : ''}
         ${isGestao() ? `<button type="button" class="btn btn-light" data-gerar>${icon('calendario', 18)}Gerar preventivas do mês</button>` : ''}
         <button type="button" class="btn btn-light" onclick="window.print()">${icon('imprimir', 18)}Imprimir / PDF</button>
       </div>
@@ -88,11 +131,18 @@ export async function render(el, params) {
       </div>
       <div class="minis">${minis.map(([k, n, v, c]) => `<button type="button" class="mini ${f.sit === k && k ? 'on' : ''}" data-sit="${k}"><span class="lbl"><i class="dot" style="background:${c}"></i>${n}</span><span class="val" style="color:${c}">${v}</span></button>`).join('')}</div>
     </section>
-    <section class="card"><h2 class="card-title" style="font-size:16px">Linha do mês</h2><div class="month-line">${linha}</div>
-      <div class="small muted" style="display:flex;gap:14px;flex-wrap:wrap">${['CONCLUIDA', 'CONCLUIDA_NC', 'VALIDAR', 'ATRASADA', 'PENDENTE'].map(k => `<span style="display:flex;align-items:center;gap:6px"><i class="dot" style="border-radius:50%;background:${SITUACAO[k][2]}"></i>${SITUACAO[k][0]}</span>`).join('')}</div>
+    <section class="card">
+      <div class="card-head"><h2 class="card-title" style="font-size:16px">Calendário de ${monthLabel(mes).split(' ')[0].toLowerCase()}</h2>
+        <div class="small muted" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center"><span class="cal-e">${icon('chave', 12)}equipe</span><span class="cal-t">${icon('maleta', 12)}terceirizada</span>${['CONCLUIDA', 'VALIDAR', 'ATRASADA', 'PENDENTE'].map(k => `<span style="display:flex;align-items:center;gap:5px"><i class="dot" style="background:${SITUACAO[k][2]}"></i>${SITUACAO[k][0]}</span>`).join('')}</div></div>
+      ${calendario}
+      <span class="small muted">Toque em um dia para ver as preventivas dele na lista.</span>
+    </section>
+    <section class="two-col">
+      <div class="card"><h2 class="card-title" style="font-size:16px">Equipe × terceirizadas · ${monthLabel(mes).split(' ')[0].toLowerCase()}</h2>${execCard}</div>
+      <div class="card"><h2 class="card-title" style="font-size:16px">Cumprimento nos últimos 6 meses</h2>${tendencia}</div>
     </section>
     <section class="card">
-      <div class="card-head"><h2 class="card-title">Preventivas de ${monthLabel(mes).split(' ')[0].toLowerCase()}</h2>
+      <div class="card-head"><h2 class="card-title" data-titulo>Preventivas de ${monthLabel(mes).split(' ')[0].toLowerCase()}</h2>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <input class="input" data-q placeholder="Buscar equipamento, TAG ou rotina" style="min-width:220px;width:auto">
           <select class="select" data-exec style="width:auto"><option value="">Todos os executores</option>${Object.entries(EXEC).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
@@ -102,8 +152,22 @@ export async function render(el, params) {
     </section>`;
 
   const tab = el.querySelector('[data-tab]');
-  const redraw = () => { tab.innerHTML = tabela(); bindTab(); el.querySelectorAll('[data-sit]').forEach(b => b.classList.toggle('on', !!f.sit && b.dataset.sit === f.sit)); el.querySelector('[data-fsit]').value = f.sit; };
+  const redraw = () => {
+    tab.innerHTML = tabela(); bindTab();
+    el.querySelectorAll('[data-dia]').forEach(b => b.classList.toggle('on', b.dataset.dia === f.dia));
+    el.querySelector('[data-titulo]').innerHTML = f.dia ? `Preventivas de ${brDateFull(f.dia)} <button type="button" class="btn btn-ghost btn-sm" data-limpar-dia>Ver o mês todo</button>` : `Preventivas de ${monthLabel(mes).split(' ')[0].toLowerCase()}`;
+    el.querySelector('[data-limpar-dia]')?.addEventListener('click', () => { f.dia = ''; redraw(); }); el.querySelectorAll('[data-sit]').forEach(b => b.classList.toggle('on', !!f.sit && b.dataset.sit === f.sit)); el.querySelector('[data-fsit]').value = f.sit; };
   el.querySelectorAll('[data-mes]').forEach(b => b.onclick = () => go('controle', { mes: b.dataset.mes }));
+  el.querySelectorAll('[data-dia]').forEach(b => b.onclick = () => { if (b.classList.contains('vazio')) return; f.dia = f.dia === b.dataset.dia ? '' : b.dataset.dia; redraw(); tab.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+  el.querySelector('[data-distribuir]')?.addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    if (S.unitId === 'ALL') return toast('Escolha uma unidade no menu para distribuir as preventivas.', 'bad');
+    if (!(await confirmDialog('Distribuir as preventivas no mês?', 'As preventivas mensais, trimestrais, semestrais e anuais desta unidade são espalhadas entre os dias 3 e 26: a equipe faz um setor por dia e cada terceirizada vem uma vez só. As preventivas já geradas e ainda não feitas mudam para o novo dia. As semanais continuam no dia da semana.', 'Distribuir'))) return;
+    busy(btn, 'Distribuindo…', async () => {
+      try { const r = await distribuirPlanos(S.unitId, t => { btn.textContent = t; }); toast(`${r.planos} planos distribuídos em ${r.grupos} grupos · ${r.movidas} preventiva(s) mudaram de dia`); refresh(); }
+      catch (err) { toast(errMsg(err), 'bad'); }
+    });
+  });
   el.querySelectorAll('[data-sit]').forEach(b => b.onclick = () => { f.sit = f.sit === b.dataset.sit ? '' : b.dataset.sit; redraw(); });
   el.querySelector('[data-fsit]').onchange = e => { f.sit = e.target.value; redraw(); };
   el.querySelector('[data-exec]').onchange = e => { f.exec = e.target.value; redraw(); };
