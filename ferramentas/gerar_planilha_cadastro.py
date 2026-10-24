@@ -121,7 +121,8 @@ for r in range(FIRST, LAST + 1):
     for j in range(1, 7):
         c = we.cell(row=r, column=j); c.border = border; c.fill = fill(INPUT); c.font = F(size=10, italic=r < EX, color=GRAY if r < EX else "0F1B33")
     we.cell(row=r, column=5).number_format = "DD/MM/YYYY"
-    achou = f'1/(({RK}<>"")*ISNUMBER(SEARCH(" "&{RK}," "&$C{r})))'
+    nome = f'IFERROR(LEFT($C{r},FIND(" – ",$C{r})-1),$C{r})'
+    achou = f'1/(({RK}<>"")*ISNUMBER(SEARCH(" "&{RK}," "&{nome})))'
     we.cell(row=r, column=7, value=f'=IF($C{r}="","",IFERROR(LOOKUP(2,{achou},Reconhecimento!$B$5:$B${RLAST}),"Confira: escolha na importação"))')
     we.cell(row=r, column=8, value=f'=IF($C{r}="","",IFERROR(LOOKUP(2,{achou},Reconhecimento!$C$5:$C${RLAST}),"—"))')
     we.cell(row=r, column=9, value=f'=IF($C{r}="","",IFERROR(VLOOKUP($G{r},Tipos!$A$5:$B${TLAST},2,FALSE),"—"))')

@@ -15,10 +15,13 @@ R = [
     (['torneira', 'pia', 'cuba', 'vaso', 'descarga', 'mictório', 'mictorio', 'ralo', 'caixa de gordura', "caixa d'água",
       'caixa dagua', "bomba d'água", 'bomba dagua', 'aquecedor', 'chuveiro', 'filtro', 'bebedouro', 'registro', 'sifão', 'sifao'], SEM, 'Hidráulica'),
     (['tela', 'kds', 'impressora', 'computador', 'notebook', 'tablet', 'roteador', 'wi-fi', 'wifi', 'tv', 'televis',
-      'caixa de som', 'som ambiente', 'câmera', 'camera', 'cftv', 'pdv', 'balança', 'balanca', 'totem', 'monitor'], 'TI e KDS', 'TI e KDS'),
+      'caixa de som', 'som ambiente', 'câmera', 'camera', 'cftv', 'pdv', 'balança', 'balanca', 'totem', 'monitor',
+      'mesa de som', 'amplificador', 'amplicifador', 'rack de som', 'hack de som', 'video game', 'videogame', 'vídeo game',
+      'vídeo wall', 'video wall', 'tv box', 'microfone', 'projetor', 'telefone', 'relógio de ponto', 'relogio de ponto'], 'TI e KDS', 'TI e KDS'),
     (['micro-ondas', 'microondas', 'liquidificador', 'batedeira', 'processador', 'mixer', 'espremedor', 'cafeteira',
       'máquina de café', 'maquina de cafe', 'seladora', 'fatiador', 'moedor', 'sanduicheira', 'grill', 'torradeira',
-      'panela', 'amassadeira', 'cilindro de massa', 'forno'], SEM, 'Equipamentos de cozinha'),
+      'panela', 'amassadeira', 'cilindro de massa', 'forno', 'aquecedor de', 'robot coupe', 'robot-coupe', 'churrasqueira',
+      'vácuo', 'vacuo', 'vacúo', 'embaladora', 'descascador', 'cortador', 'termômetro', 'termometro'], SEM, 'Equipamentos de cozinha'),
     (['dispenser', 'saboneteira', 'papeleira', 'secador de mão', 'secador de mao'], SEM, 'Limpeza'),
     # ---- climatização ----
     (['ar-condicionado', 'ar condicionado', 'split', 'condensadora', 'evaporadora'], 'Ar-condicionado split (hi-wall)', 'Climatização'),
@@ -27,14 +30,15 @@ R = [
     (['insuflamento', 'caixa de ventilação', 'caixa de ventilacao'], 'Caixa de ventilação (insuflamento)', 'Climatização'),
     # ---- refrigeração ----
     (['geladeira', 'refrigerador', 'freezer', 'frigobar', 'expositor', 'cervejeira', 'refrigerado', 'refrigerada',
-      'pass through', 'pass-through', 'vitrine fria', 'ultracongelador', 'resfriador', 'chopeira', 'choppeira'], 'Balcão refrigerado', 'Refrigeração'),
+      'pass through', 'pass-through', 'vitrine fria', 'ultracongelador', 'resfriador', 'chopeira', 'choppeira', 'balcão congelado', 'balcao congelado', 'pista fria',
+      'aquário', 'aquario'], 'Balcão refrigerado', 'Refrigeração'),
     (['câmara', 'camara'], 'Câmara frigorífica', 'Refrigeração'),
     # ---- cocção ----
     (['banho-maria', 'banho maria'], 'Banho-maria', 'Equipamentos de cozinha'),
     (['chapa'], 'Chapa', 'Equipamentos de cozinha'),
     (['fogão', 'fogao', 'boca', 'queimador'], 'Fogão', 'Equipamentos de cozinha'),
     (['fritadeira', 'fritador'], 'Fritadeira a gás', 'Equipamentos de cozinha'),
-    (['fritadeira elétrica', 'fritadeira eletrica', 'churro', 'sushi'], 'Fritadeira elétrica (churros e sushi)', 'Equipamentos de cozinha'),
+    (['fritadeira elétrica', 'fritadeira eletrica', 'fritadeira de churros', 'fritadeira de churro', 'fritadeira de sushi'], 'Fritadeira elétrica (churros e sushi)', 'Equipamentos de cozinha'),
     (['batata palha'], 'Fritadeira de batata palha', 'Equipamentos de cozinha'),
     (['salamandra'], 'Salamandra', 'Equipamentos de cozinha'),
     (['mantenedor'], 'Mantenedor de batata', 'Equipamentos de cozinha'),
@@ -67,10 +71,12 @@ R = [
     # ---- elétrica, TI, predial ----
     (['gerador'], 'Gerador', 'Elétrica'),
     (['quadro elétrico', 'quadro eletrico', 'quadro de distribuição', 'quadro de distribuicao', 'qdc', 'quadro de força', 'quadro de forca', 'quadro geral'], 'Quadro elétrico', 'Elétrica'),
-    (['nobreak', 'no-break', 'no break'], 'Nobreak (servidor e KDS)', 'TI e KDS'),
+    (['nobreak', 'no-break', 'no break', 'nobreack', 'no-breack'], 'Nobreak (servidor e KDS)', 'TI e KDS'),
     (['servidor', 'rack'], 'Servidor e rack', 'TI e KDS'),
     (['elevador', 'plataforma', 'monta-carga', 'monta carga'], 'Elevador / plataforma', 'Predial'),
     (['divisória', 'divisoria'], 'Divisória acústica', 'Predial'),
+    # ---- prioridade final (valem mesmo com outra palavra no nome) ----
+    (['kds', 'rack de som', 'hack de som'], 'TI e KDS', 'TI e KDS'),
 ]
 
 def linhas():
@@ -82,6 +88,7 @@ def linhas():
 
 # Nome que indica congelados (faixa de temperatura padrão de congelados)
 CONGELADOS = ['congel', 'freezer', 'ultracongelador']
+NAO_CONGELADOS = ['descongel']
 
 if __name__ == '__main__':
     import json, sys
@@ -91,12 +98,13 @@ if __name__ == '__main__':
 // Vale a ÚLTIMA palavra da lista encontrada no nome (as mais específicas ficam no fim).
 export const PALAVRAS = {json.dumps(linhas(), ensure_ascii=False)};
 export const CONGELADOS = {json.dumps(CONGELADOS, ensure_ascii=False)};
+export const NAO_CONGELADOS = {json.dumps(NAO_CONGELADOS, ensure_ascii=False)};
 const fold = s => String(s ?? '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/₂/g, '2').replace(/[^a-z0-9]+/g, ' ').trim();
 
-/** {{ tipo, categoria, palavra }} ou null. A palavra precisa estar no INÍCIO de uma palavra do nome
+/** {{ tipo, categoria, palavra }} ou null. O que vem depois de " – " (ex.: setor) é ignorado. A palavra precisa estar no INÍCIO de uma palavra do nome
  *  ("duto" reconhece "Duto 02", mas não "produto"). `tabela` permite usar a aba Reconhecimento da planilha. */
 export function reconhecer(nome, tabela = PALAVRAS) {{
-  const n = ' ' + fold(nome) + ' ';
+  const n = ' ' + fold(String(nome ?? '').split(' – ')[0]) + ' ';
   let achou = null;
   for (const [p, tipo, categoria] of tabela) {{
     const f = fold(p);
@@ -104,7 +112,11 @@ export function reconhecer(nome, tabela = PALAVRAS) {{
   }}
   return achou;
 }}
-export const ehCongelado = nome => CONGELADOS.some(p => (' ' + fold(nome)).includes(' ' + p) || fold(nome).includes(p));
+/** Congelado pelo nome do equipamento ou, se o nome não disser, pelo nome do setor ("Câmara congelado"). */
+export const ehCongelado = (nome, setor = '') => {{
+  const t = n => {{ const f = fold(n); return NAO_CONGELADOS.some(p => f.includes(p)) ? false : CONGELADOS.some(p => f.includes(p)) ? true : null; }};
+  return t(nome) ?? t(setor) ?? false;
+}};
 """
     open(dest, 'w').write(js)
     print('ok', len(linhas()), 'palavras')
