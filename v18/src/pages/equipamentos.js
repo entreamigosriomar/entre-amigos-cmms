@@ -85,7 +85,7 @@ function form(e = null, uidSel = null) {
   const prevPlanos = () => {
     const rs = rotinasDoTipo(F('tipo_equipamento').value);
     const box = m.querySelector('[data-planos-prev]');
-    box.innerHTML = e ? 'Os planos de preventiva deste equipamento ficam na aba Planos da ficha.' : rs.length ? `Ao salvar, serão criados ${rs.length} plano(s): ${rs.map(r => `<b>${esc(r.codigo)}</b> (${FREQ[r.frequencia].toLowerCase()})`).join(', ')}.` : 'Este tipo não tem preventiva: o item serve para abrir chamados.';
+    box.innerHTML = e ? (F('tipo_equipamento').value !== (e.tipo_equipamento || '') ? (rs.length ? `Tipo alterado: ao salvar, os planos do tipo anterior são desativados e serão criados ${rs.length} plano(s): ${rs.map(r => `<b>${esc(r.codigo)}</b> (${FREQ[r.frequencia].toLowerCase()})`).join(', ')}.` : 'Tipo alterado: ao salvar, os planos de preventiva deste equipamento são desativados (o item passa a servir só para chamados).') : 'Os planos de preventiva deste equipamento ficam na aba Planos da ficha.') : rs.length ? `Ao salvar, serão criados ${rs.length} plano(s): ${rs.map(r => `<b>${esc(r.codigo)}</b> (${FREQ[r.frequencia].toLowerCase()})`).join(', ')}.` : 'Este tipo não tem preventiva: o item serve para abrir chamados.';
   };
   F('area_id').onchange = fillSetores; F('tipo_equipamento').onchange = prevPlanos;
   if (escolherUnidade) F('unidade').onchange = () => form(null, F('unidade').value);
@@ -94,7 +94,9 @@ function form(e = null, uidSel = null) {
     if (!(await confirmDialog('Inativar ' + e.nome + '?', 'O equipamento sai das listas e os planos param de gerar preventivas. O histórico é mantido.', 'Inativar', true))) return;
     const r1 = await sb.from('equipamentos').update({ ativo: false, status: 'INATIVO' }).eq('id', e.id);
     if (r1.error) return toast(errMsg(r1.error), 'bad');
+    const { data: pls } = await sb.from('preventivas_planos').select('id').eq('equipamento_id', e.id);
     await sb.from('preventivas_planos').update({ ativo: false }).eq('equipamento_id', e.id);
+    if (pls?.length) await cancelarPendentes(pls.map(x => x.id), 'Equipamento inativado');
     await loadBase(); toast('Equipamento inativado'); refresh();
   });
   m.querySelector('[data-salvar]').onclick = ev => {
@@ -108,7 +110,8 @@ function form(e = null, uidSel = null) {
       try {
         if (e) {
           const r = await sb.from('equipamentos').update(v).eq('id', e.id); if (r.error) throw r.error;
-          toast('Equipamento atualizado');
+          const troca = v.tipo_equipamento !== (e.tipo_equipamento || '') ? await trocarPlanosDoTipo(e, v.tipo_equipamento) : null;
+          toast('Equipamento atualizado' + (troca ? ` · ${troca.criados} plano(s) criado(s), ${troca.desativados} desativado(s)` : ''));
         } else {
           const novo = await criarEquipamento(uid, v);
           toast(`${novo.tag} cadastrado` + (novo.planos ? ` com ${novo.planos} plano(s)` : ''));
@@ -128,7 +131,7 @@ export async function criarEquipamento(uid, v, opts = {}) {
   let planos = 0;
   const rs = rotinasDoTipo(v.tipo_equipamento);
   if (rs.length) {
-    const hoje = todayISO();
+    const hoje = opts.data_inicio && opts.data_inicio > todayISO() ? opts.data_inicio : todayISO();
     const rows = rs.map(r => ({
       unidade_id: uid, equipamento_id: novo.id, rotina_id: r.id, nome: `${r.codigo} — ${r.nome}`, frequencia: r.frequencia,
       dia_previsto: opts.dia_previsto || 10, dia_semana: ['SEMANAL', 'QUINZENAL'].includes(r.frequencia) ? (opts.dia_semana ?? 1) : null,
@@ -140,6 +143,33 @@ export async function criarEquipamento(uid, v, opts = {}) {
     planos = rows.length;
   }
   return { ...novo, planos };
+}
+
+// Preventivas ainda não feitas de planos desativados saem do controle mensal (canceladas com motivo).
+async function cancelarPendentes(planoIds, motivo) {
+  const r = await sb.from('preventivas_agendamentos').update({ status: 'CANCELADA', cancelado_motivo: motivo, cancelado_por: S.user.id, cancelado_em: new Date().toISOString() })
+    .in('plano_id', planoIds).in('status', ['AGENDADA', 'ATRASADA']);
+  if (r.error) console.warn('Cancelar preventivas pendentes:', r.error.message);
+}
+
+// Tipo do equipamento mudou: desativa os planos de rotinas de outro tipo e cria os do tipo novo.
+async function trocarPlanosDoTipo(e, tipo) {
+  const { data: planos, error } = await sb.from('preventivas_planos').select('id,rotina_id,ativo').eq('equipamento_id', e.id);
+  if (error) throw error;
+  const novas = rotinasDoTipo(tipo), ids = new Set(novas.map(r => r.id));
+  const sair = (planos || []).filter(p => p.ativo && p.rotina_id && !ids.has(p.rotina_id)).map(p => p.id);
+  if (sair.length) {
+    const r = await sb.from('preventivas_planos').update({ ativo: false }).in('id', sair); if (r.error) throw r.error;
+    await cancelarPendentes(sair, `Tipo do equipamento alterado para ${tipo}`);
+  }
+  const ativos = new Set((planos || []).filter(p => p.ativo).map(p => p.rotina_id));
+  const hoje = todayISO();
+  const rows = novas.filter(r => !ativos.has(r.id)).map(r => ({
+    unidade_id: e.unidade_id, equipamento_id: e.id, rotina_id: r.id, nome: `${r.codigo} — ${r.nome}`, frequencia: r.frequencia,
+    dia_previsto: 10, dia_semana: ['SEMANAL', 'QUINZENAL'].includes(r.frequencia) ? 1 : null, data_inicio: hoje, tipo_execucao: r.executor, empresa_padrao: null, ativo: true
+  }));
+  if (rows.length) { const r = await sb.from('preventivas_planos').insert(rows); if (r.error) throw r.error; }
+  return { criados: rows.length, desativados: sair.length };
 }
 
 // ---------- Ficha 360° ----------

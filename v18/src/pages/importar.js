@@ -4,7 +4,7 @@
 // Também aceita a planilha antiga (com colunas Tipo, Categoria, temperaturas, tensão…).
 import { sb } from '../config/supabase.js';
 import { S, unitName, tiposBiblioteca, TIPOS_SEM_PREVENTIVA, rotinasDoTipo, loadBase, loadLibrary, FREQ } from '../core/state.js';
-import { esc, icon, toast, errMsg, busy, todayISO, monthLabel } from '../core/util.js';
+import { esc, icon, toast, errMsg, busy, todayISO, monthLabel, shiftMonth } from '../core/util.js';
 import { proximaPelaUltima, FREQ_LONGAS } from '../core/agenda.js';
 import { reconhecer, ehCongelado, PALAVRAS } from '../core/reconhecer.js';
 import { criarEquipamento } from './equipamentos.js';
@@ -41,6 +41,8 @@ export async function render(el) {
   let uid = S.unitId === 'ALL' ? (S.units.find(u => /riomar recife/i.test(u.nome))?.id || S.units[0]?.id) : S.unitId;
   let linhas = [], catsPlanilha = [], tabela = PALAVRAS;
   const pad = { congMin: -22, congMax: -18, resfMin: 0, resfMax: 5, tensao: 220 };
+  const hojeISO = todayISO(), proxMes = shiftMonth(hojeISO, 1);
+  let inicio = Number(hojeISO.slice(8)) >= 15 ? proxMes : hojeISO; // perto do fim do mês, começa no próximo
   const TIPOS = [...tiposBiblioteca(), ...TIPOS_SEM_PREVENTIVA];
 
   el.innerHTML = `
@@ -112,13 +114,19 @@ export async function render(el) {
   function faixaTemp(l) {
     if (l.tmin !== null || l.tmax !== null) return { min: l.tmin, max: l.tmax, origem: 'planilha' };
     if (!temFaixa(l.tipo, '°C')) return null;
-    return ehCongelado(l.nome) ? { min: pad.congMin, max: pad.congMax, origem: 'congelados' } : { min: pad.resfMin, max: pad.resfMax, origem: 'resfriados' };
+    return ehCongelado(l.nome, l.setor) ? { min: pad.congMin, max: pad.congMax, origem: 'congelados' } : { min: pad.resfMin, max: pad.resfMax, origem: 'resfriados' };
   }
   const fmtNum = v => v === null || v === undefined ? '…' : String(v).replace('.', ',');
 
   function validar() {
     const existentes = new Set(S.base.equipamentos.filter(e => e.unidade_id === uid).map(e => key(e.nome)));
     const vistos = {}, hoje = todayISO();
+    // Um setor pertence a uma única área (o líder abre o chamado por Área › Setor)
+    const areaDoSetor = {};
+    S.base.setores.filter(x => x.unidade_id === uid && x.area_id).forEach(x => { const a = S.base.areas.find(y => y.id === x.area_id); if (a) areaDoSetor[key(x.nome)] = new Set([key(a.nome)]); });
+    const setorNovo = {};
+    linhas.forEach(l => { if (l.setor && l.area && !areaDoSetor[key(l.setor)]) (setorNovo[key(l.setor)] ||= new Set()).add(key(l.area)); });
+    const areaOk = l => { const k = key(l.setor), a = key(l.area); return areaDoSetor[k] ? areaDoSetor[k].has(a) : (setorNovo[k]?.size || 0) <= 1; };
     linhas.forEach(l => { vistos[key(l.nome)] = (vistos[key(l.nome)] || 0) + 1; });
     linhas.forEach(l => {
       l.erros = [];
@@ -128,14 +136,15 @@ export async function render(el) {
       if (l.ultima === null) l.erros.push('Data inválida');
       else if (l.ultima && l.ultima > hoje) l.erros.push('Data no futuro');
       if (vistos[key(l.nome)] > 1) l.erros.push('Nome repetido');
+      if (l.area && l.setor && !areaOk(l)) l.erros.push('Setor em mais de uma área');
       l.existe = existentes.has(key(l.nome));
       // Última vez feita: coluna única vale para todas as rotinas longas; colunas antigas por frequência
       const freqs = [...new Set(rotinasDoTipo(l.tipo).map(r => r.frequencia))].filter(f => FREQ_LONGAS.includes(f));
       l.ultimas = {}; l.proximas = [];
       freqs.forEach(f => {
         const d = l.ultimasCol[f] || l.ultima;
-        if (d && d <= hoje) { l.ultimas[f] = d; const px = proximaPelaUltima(d, f); l.proximas.push(`${FREQ[f]}: ${px.slice(0, 7) <= hoje.slice(0, 7) ? 'vencida, entra já' : monthLabel(px)}`); }
-        else l.proximas.push(`${FREQ[f]}: entra já`);
+        if (d && d <= hoje) { l.ultimas[f] = d; const px = proximaPelaUltima(d, f); l.proximas.push(`${FREQ[f]}: ${px.slice(0, 7) <= inicio.slice(0, 7) ? 'vencida, entra no início' : monthLabel(px)}`); }
+        else l.proximas.push(`${FREQ[f]}: entra no início`);
       });
       l.faixa = faixaTemp(l);
     });
@@ -152,6 +161,12 @@ export async function render(el) {
       <div class="card-head"><h2 class="card-title">Conferência · ${esc(unitName(uid))}</h2>
         <button type="button" class="btn btn-primary" data-go ${ok.length ? '' : 'disabled'}>${icon('upload', 18)}Importar ${ok.length} item(ns)</button></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><span class="pill p-ok">${ok.length} prontos</span><span class="pill p-info">${planos} planos de preventiva</span>${conferir ? `<span class="pill p-warn">${conferir} não reconhecido(s): escolha o tipo</span>` : ''}${exist.length ? `<span class="pill p-gray">${exist.length} já existem (ignorados)</span>` : ''}${ruins.length ? `<span class="pill p-bad">${ruins.length} com pendência</span>` : ''}</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+        <label class="field" style="max-width:320px">Início das preventivas<select class="select" data-inicio>
+          <option value="${hojeISO}" ${inicio === hojeISO ? 'selected' : ''}>Agora (${esc(monthLabel(hojeISO))})</option>
+          <option value="${proxMes}" ${inicio === proxMes ? 'selected' : ''}>1º de ${esc(monthLabel(proxMes))}</option></select></label>
+        <span class="small muted" style="padding-bottom:12px">${planos} plano(s) começam ${inicio === hojeISO ? 'neste mês' : 'no próximo mês'}; as com “última preventiva” seguem a data calculada.</span>
+      </div>
       ${refrig || ok.some(l => temFaixa(l.tipo, 'V')) ? `<div class="card" style="background:var(--bg,#F5F7FB);box-shadow:none;padding:14px;gap:10px">
         <b>Faixas padrão (ajuste depois na ficha de cada equipamento)</b>
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
@@ -178,6 +193,7 @@ export async function render(el) {
       validar();
     });
     prev.querySelectorAll('[data-cat]').forEach(s => s.onchange = () => { linhas[s.dataset.cat].categoria = s.value; validar(); });
+    prev.querySelector('[data-inicio]').onchange = ev => { inicio = ev.target.value; validar(); };
     prev.querySelectorAll('[data-pad]').forEach(inp => inp.onchange = () => { const v = Number(inp.value); if (!isNaN(v)) pad[inp.dataset.pad] = v; validar(); });
     prev.querySelector('[data-go]').onclick = ev => importar(ev.currentTarget, ok);
   }
@@ -215,7 +231,7 @@ export async function render(el) {
           try {
             const area = areasUn().find(a => key(a.nome) === key(l.area)), setor = setUn().find(s => key(s.nome) === key(l.setor));
             const cat = S.base.categorias.find(c => c.unidade_id === uid && key(c.nome) === key(l.categoria));
-            const novo = await criarEquipamento(uid, { nome: l.nome, area_id: area.id, setor_id: setor.id, tipo_equipamento: l.tipo, categoria: cat?.nome || l.categoria, fabricante_texto: l.fabricante || null, numero: l.serie || null, observacoes: [l.modelo ? 'Modelo: ' + l.modelo : '', l.obs].filter(Boolean).join(' | ') || null }, { ultimas: l.ultimas });
+            const novo = await criarEquipamento(uid, { nome: l.nome, area_id: area.id, setor_id: setor.id, tipo_equipamento: l.tipo, categoria: cat?.nome || l.categoria, fabricante_texto: l.fabricante || null, numero: l.serie || null, observacoes: [l.modelo ? 'Modelo: ' + l.modelo : '', l.obs].filter(Boolean).join(' | ') || null }, { ultimas: l.ultimas, data_inicio: inicio });
             planos += novo.planos;
             await gravarFaixas(novo, l);
             feitos++;
