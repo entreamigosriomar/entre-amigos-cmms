@@ -25,13 +25,13 @@ R = [
     (['dispenser', 'saboneteira', 'papeleira', 'secador de mão', 'secador de mao'], SEM, 'Limpeza'),
     # ---- climatização ----
     (['ar-condicionado', 'ar condicionado', 'split', 'condensadora', 'evaporadora'], 'Ar-condicionado split (hi-wall)', 'Climatização'),
-    (['cassete', 'cassette'], 'Ar-condicionado split cassete', 'Climatização'),
+    (['cassete', 'cassette', 'k7'], 'Ar-condicionado split cassete', 'Climatização'),
     (['ventilador'], 'Ventilador (parede ou coluna)', 'Climatização'),
     (['insuflamento', 'caixa de ventilação', 'caixa de ventilacao'], 'Caixa de ventilação (insuflamento)', 'Climatização'),
     # ---- refrigeração ----
     (['geladeira', 'refrigerador', 'freezer', 'frigobar', 'expositor', 'cervejeira', 'refrigerado', 'refrigerada',
-      'pass through', 'pass-through', 'vitrine fria', 'ultracongelador', 'resfriador', 'chopeira', 'choppeira', 'balcão congelado', 'balcao congelado', 'pista fria',
-      'aquário', 'aquario'], 'Balcão refrigerado', 'Refrigeração'),
+      'pass through', 'pass-through', 'vitrine fria', 'ultracongelador', 'resfriador', 'chopeira', 'choppeira', 'balcão congelado', 'balcao congelado', 'pista fria'], 'Balcão refrigerado', 'Refrigeração'),
+    (['aquário', 'aquario'], SEM, 'Refrigeração'),
     (['câmara', 'camara'], 'Câmara frigorífica', 'Refrigeração'),
     # ---- cocção ----
     (['banho-maria', 'banho maria'], 'Banho-maria', 'Equipamentos de cozinha'),
@@ -76,7 +76,8 @@ R = [
     (['elevador', 'plataforma', 'monta-carga', 'monta carga'], 'Elevador / plataforma', 'Predial'),
     (['divisória', 'divisoria'], 'Divisória acústica', 'Predial'),
     # ---- prioridade final (valem mesmo com outra palavra no nome) ----
-    (['kds', 'rack de som', 'hack de som'], 'TI e KDS', 'TI e KDS'),
+    (['kds', 'rack de som', 'hack de som', 'tinklaid'], 'TI e KDS', 'TI e KDS'),
+    (['restoclean'], SEM, 'Equipamentos de cozinha'),
 ]
 
 def linhas():
