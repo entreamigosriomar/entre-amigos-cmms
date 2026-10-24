@@ -235,7 +235,10 @@ export async function render(el) {
             planos += novo.planos;
             await gravarFaixas(novo, l);
             feitos++;
-          } catch (err) { falhas++; say(`Linha ${l.n} (${l.nome}): ${errMsg(err)}`); }
+          } catch (err) {
+            falhas++;
+            if (!feitos && falhas >= 3) { say(`Linha ${l.n} (${l.nome}): ${errMsg(err)} [${err?.message || err}${err?.details ? ' — ' + err.details : ''}]`); say('Importação interrompida: os 3 primeiros itens deram o mesmo erro. Nada mais foi tentado.'); break; }
+            say(`Linha ${l.n} (${l.nome}): ${errMsg(err)}${err?.message && errMsg(err) !== err.message ? ` [${err.message}${err.details ? " — " + err.details : ""}]` : ""}`); }
         }
         await loadBase();
         say(`Concluído: ${feitos} item(ns) cadastrado(s), ${planos} plano(s) de preventiva${falhas ? `, ${falhas} com erro` : ''}.`);
