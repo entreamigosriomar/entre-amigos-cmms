@@ -33,7 +33,7 @@ http.createServer(async(req,res)=>{
     const p=decodeURIComponent(u.pathname.replace('/storage/v1/object/os-anexos/',''));let data=await body(req),type=req.headers['content-type']||'image/jpeg';
     const mb=/multipart\/form-data; boundary=(.+)$/.exec(type);
     if(mb){const raw=data.toString('latin1');const parts=raw.split('--'+mb[1]);const part=parts.find(x=>/filename=/.test(x))||parts[1];const hEnd=part.indexOf('\r\n\r\n');const ct=/Content-Type: ([^\r\n]+)/i.exec(part.slice(0,hEnd));data=Buffer.from(part.slice(hEnd+4,part.length-2),'latin1');type=ct?ct[1]:'image/jpeg';}
-    files[p]={data,type};return send(res,200,{Key:'os-anexos/'+p,Id:p});
+    console.log('UPLOAD',p,type,data.length);files[p]={data,type};return send(res,200,{Key:'os-anexos/'+p,Id:p});
   }
   if(u.pathname.startsWith('/realtime'))return send(res,404,{});
   let fp=path.join(ROOT,decodeURIComponent(u.pathname==='/'?'/index.html':u.pathname));
