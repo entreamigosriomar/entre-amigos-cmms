@@ -54,9 +54,26 @@ export function bindPicker(root, id, files, { allowPdf = false, onChange } = {})
 }
 
 // Envia arquivos; devolve [{path,name,mime,size}]. O banco guarda o caminho, nunca link público.
+// Reduz fotos antes de enviar (lado maior 1600 px, JPEG 80%): de 3–5 MB para ~200–400 KB.
+// PDFs e arquivos que não abrem como imagem vão como estão.
+const MAX_LADO = 1600, QUALIDADE = 0.8;
+async function comprimir(f) {
+  if (!/^image\/(jpeg|png|webp|heic|heif)$/i.test(f.type) || f.size < 300 * 1024) return f;
+  try {
+    const bmp = await createImageBitmap(f, { imageOrientation: 'from-image' });
+    const k = Math.min(1, MAX_LADO / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height); bmp.close?.();
+    const blob = await new Promise(ok => c.toBlob(ok, 'image/jpeg', QUALIDADE));
+    if (!blob || blob.size >= f.size) return f;
+    return new File([blob], f.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+  } catch { return f; }
+}
+
 export async function uploadFiles(files, unitId, folder) {
   const out = [];
-  for (const f of files) {
+  for (const original of files) {
+    const f = await comprimir(original);
     const ext = (f.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
     const path = `${unitId}/${folder}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
     const { error } = await sb.storage.from(BUCKET).upload(path, f, { contentType: f.type, upsert: false });
