@@ -30,8 +30,9 @@ Sistema de manutenção (CMMS) das lojas Entre Amigos: preventivas mensais com c
 | 2 | `sql/02_preventivas_mensais.sql` | Antes de publicar a V18.1 |
 | 3 | `sql/04_carga_biblioteca.sql` | Logo após o 02 |
 | 4 | `sql/05_chamados_e_locais.sql` | Logo após o 04 |
-| 5 | Publicar a V18.1 no GitHub Pages | — |
-| 6 | `sql/03_fotos_privadas.sql` | **Só depois** que a V18.1 estiver no ar (a V16.1 usa links públicos) |
+| 5 | `sql/06_corrigir_tag.sql` | TAG sequencial por unidade (corrige TAG repetida na importação) |
+| 6 | Publicar a V18.1 no GitHub Pages | — |
+| 7 | `sql/03_fotos_privadas.sql` | **Só depois** que a V18.1 estiver no ar (a V16.1 usa links públicos) |
 
 Todos só acrescentam tabelas, colunas e funções; nenhum dado é apagado. Cada arquivo termina com uma consulta de conferência.
 
