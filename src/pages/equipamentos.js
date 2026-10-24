@@ -25,7 +25,7 @@ export async function render(el, params) {
       <div class="eq-grid">${es.map(e => { const s = EQ_STATUS[e.status] || EQ_STATUS.OPERACIONAL; return `<button type="button" class="eq" data-eq="${e.id}">
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span class="mono muted">${esc(e.tag || 'sem TAG')}</span><span class="pill ${s[1]}">${s[0]}</span></div>
         <span class="nm">${esc(e.nome)}</span>
-        <span class="small muted">${esc(e.tipo_equipamento || 'Tipo não definido')}${e.categoria ? ' · ' + esc(e.categoria) : ''}</span>
+        <span class="small muted">${esc(e.tipo_equipamento || 'Tipo não definido')}${e.categoria && e.categoria !== e.tipo_equipamento ? ' · ' + esc(e.categoria) : ''}</span>
       </button>`; }).join('')}</div>`).join('');
   }
 
