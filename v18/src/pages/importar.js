@@ -8,6 +8,7 @@ import { esc, icon, toast, errMsg, busy, todayISO, monthLabel, shiftMonth } from
 import { proximaPelaUltima, FREQ_LONGAS } from '../core/agenda.js';
 import { reconhecer, ehCongelado, PALAVRAS } from '../core/reconhecer.js';
 import { criarEquipamento } from './equipamentos.js';
+import { distribuirPlanos } from '../core/distribuir.js';
 
 const XLSX_URL = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
 function loadXLSX() {
@@ -241,6 +242,10 @@ export async function render(el) {
             say(`Linha ${l.n} (${l.nome}): ${errMsg(err)}${err?.message && errMsg(err) !== err.message ? ` [${err.message}${err.details ? " — " + err.details : ""}]` : ""}`); }
         }
         await loadBase();
+        if (planos) {
+          try { const d = await distribuirPlanos(uid); say(`Preventivas distribuídas no mês: ${d.planos} planos em ${d.grupos} grupos (um setor por dia para a equipe; cada terceirizada num dia só).`); }
+          catch (err) { say('Não foi possível distribuir as preventivas no mês: ' + errMsg(err) + '. Use “Distribuir no mês” no Controle mensal.'); }
+        }
         say(`Concluído: ${feitos} item(ns) cadastrado(s), ${planos} plano(s) de preventiva${falhas ? `, ${falhas} com erro` : ''}.`);
         toast(`${feitos} itens importados`);
         btn.remove();
