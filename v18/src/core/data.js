@@ -1,7 +1,7 @@
 // Consultas e ações no Supabase usadas por várias telas.
 import { sb } from '../config/supabase.js';
 import { S, unitIds, eq, OPEN_STATUS } from './state.js';
-import { monthStart, monthEnd } from './util.js';
+import { monthStart, monthEnd, shiftMonth } from './util.js';
 
 const must = r => { if (r.error) throw r.error; return r.data; };
 
@@ -30,6 +30,17 @@ export async function osPeriodo(desdeISO, ids = unitIds()) {
     .or(`status.in.(${OPEN_STATUS.join(',')}),data_abertura.gte.${desdeISO},data_conclusao.gte.${desdeISO}`)
     .order('data_abertura', { ascending: false }).limit(500));
 }
+// OS que importam para um mês fechado: abertas até o fim do mês e ainda abertas, concluídas depois dele,
+// ou abertas/concluídas dentro dele. Limite superior evita que meses passados herdem dados de hoje.
+export async function osDoMes(mesISO, ids = unitIds()) {
+  const ini = monthStart(mesISO), prox = shiftMonth(mesISO, 1);
+  return must(await sb.from('ordens_servico').select('*').in('unidade_id', ids)
+    .lt('data_abertura', limiteRecife(prox))
+    .or(`status.in.(${OPEN_STATUS.join(',')}),data_abertura.gte."${limiteRecife(ini)}",data_conclusao.gte."${limiteRecife(ini)}"`)
+    .order('data_abertura', { ascending: false }).limit(1000));
+}
+// Meia-noite de Recife (UTC-3) em ISO, para comparar com colunas timestamptz.
+export const limiteRecife = dia => `${dia}T00:00:00-03:00`;
 export async function osById(id) {
   return must(await sb.from('ordens_servico').select('*').eq('id', id).single());
 }

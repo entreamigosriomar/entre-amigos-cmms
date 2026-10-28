@@ -2,33 +2,41 @@
 import { sb } from '../config/supabase.js';
 import { S, situacao, isDone, rotina, FAMILIA, PRIO, OPEN_STATUS, unitName, unitIds, currentUnitName, eqName, codigoAg, diasAtraso, canSwitchUnits } from '../core/state.js';
 import { esc, icon, todayISO, monthStart, monthLabel, moneyShort, pct, since, brDate, shiftMonth } from '../core/util.js';
-import { agendamentosMes, osPeriodo } from '../core/data.js';
-import { openOS, osTitle, osWhere, slaVencido } from '../core/os.js';
+import { agendamentosMes, osDoMes, limiteRecife } from '../core/data.js';
+import { openOS, osTitle, osWhere } from '../core/os.js';
 import { go, refresh } from '../core/nav.js';
 
 export async function render(el, params) {
   const hoje = todayISO();
   const mes = params.mes || monthStart(hoje);
   const ids = unitIds();
+  const prox = shiftMonth(mes, 1);
+  const iniTs = limiteRecife(mes), proxTs = limiteRecife(prox);
   const [ags, os, custos] = await Promise.all([
     agendamentosMes(mes, ids),
-    osPeriodo(mes, ids),
-    sb.from('os_custos').select('valor,tipo,unidade_id,criado_em').in('unidade_id', ids).gte('criado_em', mes)
+    osDoMes(mes, ids),
+    sb.from('os_custos').select('valor,tipo,unidade_id,criado_em').in('unidade_id', ids).gte('criado_em', iniTs).lt('criado_em', proxTs)
   ]);
+  if (custos.error) console.warn('Custos do mês:', custos.error.message);
+  // Retrato no FIM do mês escolhido (no mês atual = agora).
+  const fimTs = new Date(Math.min(Date.now(), new Date(proxTs).getTime()));
+  const abertaNoFim = o => o.status !== 'CANCELADA' && new Date(o.data_abertura) < fimTs &&
+    (OPEN_STATUS.includes(o.status) || (o.data_conclusao && new Date(o.data_conclusao) >= fimTs));
   const sits = ags.map(a => ({ a, s: situacao(a, hoje) }));
   const validos = sits.filter(x => x.s !== 'CANCELADA');
   const feitas = validos.filter(x => isDone(x.a));
   const cumpr = validos.length ? feitas.length / validos.length * 100 : 0;
   const atrasadas = sits.filter(x => x.s === 'ATRASADA');
   const atrasCriticas = atrasadas.filter(x => ['GAS', 'INC'].includes(rotina(x.a.rotina_id)?.familia));
-  const abertas = os.filter(o => OPEN_STATUS.includes(o.status));
+  const abertas = os.filter(abertaNoFim);
   const criticas = abertas.filter(o => o.prioridade === 'CRITICA');
-  const vencidas = abertas.filter(slaVencido);
+  const vencidas = abertas.filter(o => o.sla_limite && new Date(o.sla_limite) < fimTs);
   const custoOS = (custos.data || []).reduce((s, c) => s + Number(c.valor || 0), 0);
   const custoPrev = ags.reduce((s, a) => s + Number(a.custo_extra || 0), 0);
   const custoMat = (custos.data || []).filter(c => c.tipo === 'material').reduce((s, c) => s + Number(c.valor || 0), 0);
   const custoTot = custoOS + custoPrev;
-  const chamadosMes = os.filter(o => o.origem === 'CHAMADO' && o.data_abertura >= mes);
+  const noMes = ts => ts && new Date(ts) >= new Date(iniTs) && new Date(ts) < new Date(proxTs);
+  const chamadosMes = os.filter(o => o.origem === 'CHAMADO' && noMes(o.data_abertura));
 
   // Por unidade
   const porUnidade = (canSwitchUnits() && S.unitId === 'ALL' ? S.units : S.units.filter(u => ids.includes(u.id))).map(u => {
@@ -43,7 +51,7 @@ export async function render(el, params) {
   vencidas.filter(o => o.prioridade !== 'CRITICA').forEach(o => alertas.push({ tag: ['Prazo vencido', 'p-orange'], t: osTitle(o), d: `OS ${o.numero} · ${osWhere(o)} · prazo ${brDate(o.sla_limite)}`, u: o.unidade_id, os: o.id, w: 2 }));
   atrasadas.filter(x => !atrasCriticas.includes(x)).forEach(({ a }) => alertas.push({ tag: ['Atrasada', 'p-orange'], t: `${eqName(a.equipamento_id)} · ${rotina(a.rotina_id)?.nome || 'preventiva'}`, d: `${codigoAg(a)} · ${diasAtraso(a)} dias de atraso`, u: a.unidade_id, ag: a.id, w: 3 }));
   sits.filter(x => x.s === 'VALIDAR').forEach(({ a }) => alertas.push({ tag: ['Validar', 'p-violet'], t: `${eqName(a.equipamento_id)} · visita da terceirizada`, d: `${codigoAg(a)} · ${a.empresa_executora || ''} · aguardando validação`, u: a.unidade_id, sit: 'VALIDAR', w: 4 }));
-  os.filter(o => o.confirmacao === 'REABERTO' && OPEN_STATUS.includes(o.status)).forEach(o => alertas.push({ tag: ['Reaberto', 'p-bad'], t: osTitle(o), d: `OS ${o.numero} · o líder não aprovou a solução`, u: o.unidade_id, os: o.id, w: 2 }));
+  abertas.filter(o => o.confirmacao === 'REABERTO').forEach(o => alertas.push({ tag: ['Reaberto', 'p-bad'], t: osTitle(o), d: `OS ${o.numero} · o líder não aprovou a solução`, u: o.unidade_id, os: o.id, w: 2 }));
   alertas.sort((a, b) => a.w - b.w);
 
   // Por família
